@@ -30,6 +30,18 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertEqual(report["game_cards"][0]["recommendation"]["stake_label"], "medium")
         self.assertIn("availability_risk", report["player_cards"][0]["flags"])
 
+    def test_build_report_supports_player_names_and_team_names(self):
+        application = BettingApplication()
+
+        report = application.build_report(
+            player_ids=["Jayson Tatum"],
+            game_ids=["Boston Celtics"],
+        )
+
+        self.assertEqual(report["player_cards"][0]["player_id"], "42")
+        self.assertEqual(report["game_cards"][0]["game_id"], "finals")
+        self.assertEqual(report["portfolio_summary"]["highest_edge_game"], "finals")
+
     def test_render_text_report_contains_sections(self):
         application = BettingApplication()
         report = application.build_report(player_ids=["7"], game_ids=["finals"])

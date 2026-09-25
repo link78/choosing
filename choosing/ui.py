@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from .data_sources import search_players, search_teams
+
 
 def app_metadata() -> dict:
     return {
@@ -12,6 +14,8 @@ def app_metadata() -> dict:
             "health": "/health",
             "player_prediction": "/player/{id}/prediction",
             "game_edge": "/game/{id}/edge",
+            "player_lookup": "/lookup/players?query={name}",
+            "team_lookup": "/lookup/teams?query={team}",
             "app_metadata": "/app.json",
         },
         "advisory_only": True,
@@ -21,6 +25,12 @@ def app_metadata() -> dict:
 def render_home_page() -> str:
     metadata = app_metadata()
     metadata_json = json.dumps(metadata, indent=2)
+    player_options = "\n".join(
+        f'<option value="{player["name"]}">{player["team"]}</option>' for player in search_players()
+    )
+    team_options = "\n".join(
+        f'<option value="{team["team"]}">{team["opponent"]}</option>' for team in search_teams()
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -181,11 +191,16 @@ def render_home_page() -> str:
     <section class="forms">
       <article class="card">
         <h2>Player prediction</h2>
-        <p class="muted">Get minutes, performance, risk, and availability for any player id.</p>
+        <p class="muted">Look up performance, risk, and availability by player name, with optional team filtering.</p>
         <form id="player-form">
-          <label>Player id
-            <input id="player-id" name="player-id" value="42" inputmode="numeric">
+          <label>Player name
+            <input id="player-id" name="player-id" value="Jayson Tatum" list="player-options">
           </label>
+          <label>Team (optional)
+            <input id="player-team" name="player-team" value="Boston Celtics" list="team-options">
+          </label>
+          <datalist id="player-options">{player_options}</datalist>
+          <datalist id="team-options">{team_options}</datalist>
           <button type="submit">Load player view</button>
         </form>
         <div id="player-result" class="result muted">Waiting for a player lookup.</div>
@@ -193,10 +208,10 @@ def render_home_page() -> str:
 
       <article class="card">
         <h2>Game edge</h2>
-        <p class="muted">Compare model probability against market odds to find betting value.</p>
+        <p class="muted">Look up predicted outcomes and betting edges by team name.</p>
         <form id="game-form">
-          <label>Game id
-            <input id="game-id" name="game-id" value="finals">
+          <label>Team name
+            <input id="game-id" name="game-id" value="Boston Celtics" list="team-options">
           </label>
           <label>Model probability (optional)
             <input id="model-probability" name="model-probability" value="0.61" inputmode="decimal">
@@ -233,6 +248,8 @@ def render_home_page() -> str:
     function playerMarkup(payload) {{
       return `
         <div class="metric-grid">
+          <div class="metric"><strong>Player</strong><br>${{payload.player_name}}</div>
+          <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
           <div class="metric"><strong>Minutes</strong><br>${{payload.predictions.expected_minutes}}</div>
           <div class="metric"><strong>Performance</strong><br>${{payload.predictions.expected_performance}}</div>
           <div class="metric"><strong>Availability</strong><br>${{payload.predictions.availability_probability}}</div>
@@ -244,6 +261,8 @@ def render_home_page() -> str:
     function gameMarkup(payload) {{
       return `
         <div class="metric-grid">
+          <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
+          <div class="metric"><strong>Opponent</strong><br>${{payload.opponent}}</div>
           <div class="metric"><strong>Win probability</strong><br>${{payload.team_prediction.win_probability}}</div>
           <div class="metric"><strong>Expected points</strong><br>${{payload.team_prediction.expected_points}}</div>
           <div class="metric"><strong>Implied probability</strong><br>${{payload.market_signals.implied_probability}}</div>
@@ -259,7 +278,11 @@ def render_home_page() -> str:
       const target = byId("player-result");
       target.textContent = "Loading player prediction...";
       const playerId = encodeURIComponent(byId("player-id").value.trim());
-      const response = await fetch(`/player/${{playerId}}/prediction`);
+      const params = new URLSearchParams();
+      const team = byId("player-team").value.trim();
+      if (team) params.set("team", team);
+      const suffix = params.toString() ? `?${{params.toString()}}` : "";
+      const response = await fetch(`/player/${{playerId}}/prediction${{suffix}}`);
       const payload = await response.json();
       target.innerHTML = response.ok ? playerMarkup(payload) : `<span class="danger">${{payload.error || "Request failed"}}</span>`;
     }}

@@ -38,7 +38,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["headers_map"]["Content-Type"], "text/html; charset=utf-8")
         self.assertIn("Mobile friendly betting dashboard", response["raw_body"])
         self.assertIn('name="viewport"', response["raw_body"])
-        self.assertIn("Player prediction", response["raw_body"])
+        self.assertIn("Player name", response["raw_body"])
+        self.assertIn("Team name", response["raw_body"])
 
     def test_app_metadata_endpoint_returns_machine_readable_json(self):
         response = request("/app.json")
@@ -59,6 +60,16 @@ class PredictionApiTests(unittest.TestCase):
         self.assertLessEqual(predictions["expected_minutes"], 48)
         self.assertIn("underperformance_risk", predictions)
         self.assertIn("availability_probability", predictions)
+        self.assertIn("player_name", response["body"])
+        self.assertIn("team", response["body"])
+
+    def test_player_prediction_endpoint_supports_player_name_and_team_lookup(self):
+        response = request("/player/Jayson%20Tatum/prediction?team=Boston%20Celtics")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["body"]["player_id"], "42")
+        self.assertEqual(response["body"]["player_name"], "Jayson Tatum")
+        self.assertEqual(response["body"]["team"], "Boston Celtics")
 
     def test_player_prediction_endpoint_applies_overrides(self):
         response = request(
@@ -70,10 +81,12 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["source_snapshots"]["sports_data_io"]["availability"], 0.95)
 
     def test_game_edge_endpoint_uses_model_probability_and_odds_query_params(self):
-        response = request("/game/finals/edge?model_probability=0.61&odds=-110")
+        response = request("/game/Boston%20Celtics/edge?model_probability=0.61&odds=-110")
 
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(response["body"]["game_id"], "finals")
+        self.assertEqual(response["body"]["team"], "Boston Celtics")
+        self.assertEqual(response["body"]["opponent"], "Dallas Mavericks")
         self.assertEqual(response["body"]["market_signals"]["current_odds"], -110)
         self.assertEqual(response["body"]["team_prediction"]["win_probability"], 0.61)
         self.assertEqual(response["body"]["market_signals"]["implied_probability"], 0.524)
@@ -118,6 +131,15 @@ class PredictionApiTests(unittest.TestCase):
 
         self.assertEqual(response["status"], "400 Bad Request")
         self.assertEqual(response["body"]["error"], "effort_change must be between -1 and 1")
+
+    def test_lookup_endpoints_return_player_and_team_matches(self):
+        player_response = request("/lookup/players?query=tatum")
+        team_response = request("/lookup/teams?query=warriors")
+
+        self.assertEqual(player_response["status"], "200 OK")
+        self.assertEqual(player_response["body"]["players"][0]["name"], "Jayson Tatum")
+        self.assertEqual(team_response["status"], "200 OK")
+        self.assertEqual(team_response["body"]["teams"][0]["team"], "Golden State Warriors")
 
 
 if __name__ == "__main__":

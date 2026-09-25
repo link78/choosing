@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, unquote
 
 from .service import PredictionService
 from .ui import app_metadata, render_home_page
@@ -125,6 +125,20 @@ def app(environ, start_response):
     if path == "/app.json":
         return json_response(start_response, "200 OK", app_metadata())
 
+    if path == "/lookup/players":
+        return json_response(
+            start_response,
+            "200 OK",
+            {"players": service.search_players(query.get("query", [""])[0], query.get("team", [None])[0])},
+        )
+
+    if path == "/lookup/teams":
+        return json_response(
+            start_response,
+            "200 OK",
+            {"teams": service.search_teams(query.get("query", [""])[0])},
+        )
+
     if path == "/health":
         return json_response(
             start_response,
@@ -133,12 +147,14 @@ def app(environ, start_response):
         )
 
     if path.startswith("/player/") and path.endswith("/prediction"):
-        player_id = path[len("/player/") : -len("/prediction")].strip("/")
+        player_id = unquote(path[len("/player/") : -len("/prediction")].strip("/"))
         if not player_id:
             return json_response(start_response, "404 Not Found", {"error": "Not found"})
         overrides, errors = _parse_overrides(query, PLAYER_FLOAT_FIELDS, float, "must be numeric")
         if errors:
             return json_response(start_response, "400 Bad Request", {"errors": errors})
+        if "team" in query and query["team"][0].strip():
+            overrides["team"] = query["team"][0].strip()
         for bounded_field in {
             "recent_form",
             "workload",
@@ -166,7 +182,7 @@ def app(environ, start_response):
         return json_response(start_response, "200 OK", service.get_player_prediction(player_id, overrides))
 
     if path.startswith("/game/") and path.endswith("/edge"):
-        game_id = path[len("/game/") : -len("/edge")].strip("/")
+        game_id = unquote(path[len("/game/") : -len("/edge")].strip("/"))
         if not game_id:
             return json_response(start_response, "404 Not Found", {"error": "Not found"})
         sports_overrides, float_errors = _parse_overrides(query, GAME_FLOAT_FIELDS, float, "must be numeric")

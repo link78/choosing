@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .data_sources import OddsAPIClient, SportsDataIOClient
+from .data_sources import OddsAPIClient, SportsDataIOClient, search_players, search_teams
 from .prediction import build_game_edge, build_player_prediction, clamp
 
 
@@ -25,8 +25,10 @@ class PredictionService:
 
     def get_player_prediction(self, player_id: str, overrides: dict | None = None) -> dict:
         sports_data = self.sports_client.fetch_player_context(player_id, overrides)
-        payload = build_player_prediction(player_id, sports_data)
-        payload["meta"] = self._meta(player_id, "player")
+        payload = build_player_prediction(sports_data["player_id"], sports_data)
+        payload["meta"] = self._meta(sports_data["player_id"], "player")
+        payload["player_name"] = sports_data["player_name"]
+        payload["team"] = sports_data["team"]
         payload["source_snapshots"] = {
             "sports_data_io": {
                 "recent_form": round(sports_data["recent_form"], 3),
@@ -40,8 +42,10 @@ class PredictionService:
     def get_game_edge(self, game_id: str, sports_overrides: dict | None = None, odds_overrides: dict | None = None) -> dict:
         sports_data = self.sports_client.fetch_game_context(game_id, sports_overrides)
         odds_data = self.odds_client.fetch_game_market(game_id, odds_overrides)
-        payload = build_game_edge(game_id, sports_data, odds_data)
-        payload["meta"] = self._meta(game_id, "game")
+        payload = build_game_edge(sports_data["game_id"], sports_data, odds_data)
+        payload["meta"] = self._meta(sports_data["game_id"], "game")
+        payload["team"] = sports_data["team"]
+        payload["opponent"] = sports_data["opponent"]
         payload["team_prediction"]["expected_points"] = round(
             payload["team_prediction"]["expected_points"] + sports_data["expected_points_adjustment"],
             1,
@@ -61,6 +65,12 @@ class PredictionService:
         )
         payload["betting_edge"]["recommended_stake"] = _recommended_stake(payload["betting_edge"]["edge"])
         return payload
+
+    def search_players(self, query: str = "", team: str | None = None) -> list[dict]:
+        return search_players(query, team)
+
+    def search_teams(self, query: str = "") -> list[dict]:
+        return search_teams(query)
 
 
 def _recommended_stake(edge: float) -> str:

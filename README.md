@@ -14,7 +14,7 @@ python -m choosing.api
 Run the application:
 
 ```bash
-python -m choosing --players 7,42 --games finals,demo --bankroll 1000
+python -m choosing --players "Jayson Tatum,Nikola Jokic" --games "Boston Celtics,Denver Nuggets" --bankroll 1000
 ```
 
 Print the report as JSON:
@@ -34,8 +34,10 @@ The application uses the existing SportsDataIO-style and Odds API-style integrat
 
 The repository still includes the underlying HTTP prediction utilities:
 
-- `GET /player/{id}/prediction`
-- `GET /game/{id}/edge`
+- `GET /player/{id}/prediction` supports player ids or player names, plus optional `team=...`
+- `GET /game/{id}/edge` supports game ids or team names
+- `GET /lookup/players?query={name}`
+- `GET /lookup/teams?query={team}`
 - `GET /` for the responsive UI
 - `GET /app.json` for machine-readable app metadata
 - `GET /health`
