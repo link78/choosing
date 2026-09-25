@@ -4,7 +4,12 @@ from urllib.error import URLError
 from unittest.mock import patch
 
 from choosing.api import app
-from choosing.data_sources import OddsAPIClient, SportsDataIOClient
+from choosing.data_sources import (
+    FantasySportsAPIClient,
+    MediaBroadcastClient,
+    OddsAPIClient,
+    SportsDataIOClient,
+)
 from choosing.service import PredictionService
 
 
@@ -63,6 +68,38 @@ def fake_odds_fetcher(url: str, headers=None, timeout=5.0):
     raise AssertionError(f"Unexpected Odds API URL: {url}")
 
 
+def fake_media_fetcher(url: str, headers=None, timeout=5.0):
+    if url.endswith("/players/30"):
+        return {
+            "media_sentiment": 0.81,
+            "broadcast_exposure": 0.9,
+            "narrative_pressure": 0.24,
+        }
+    if url.endswith("/games/warriors-lakers"):
+        return {
+            "broadcast_heat": 0.87,
+            "audience_confidence": 0.73,
+            "narrative_pressure": 0.29,
+        }
+    raise AssertionError(f"Unexpected Media API URL: {url}")
+
+
+def fake_fantasy_fetcher(url: str, headers=None, timeout=5.0):
+    if url.endswith("/players/30"):
+        return {
+            "fantasy_projection": 37.5,
+            "fantasy_value_rating": 0.82,
+            "ownership_projection": 0.33,
+        }
+    if url.endswith("/games/warriors-lakers"):
+        return {
+            "fantasy_market_support": 0.76,
+            "fantasy_points_total": 232.5,
+            "injury_leverage": 0.21,
+        }
+    raise AssertionError(f"Unexpected Fantasy API URL: {url}")
+
+
 class LiveDataSourceTests(unittest.TestCase):
     def test_sportsdataio_client_uses_live_data_when_configured(self):
         with patch.dict(os.environ, {"SPORTSDATAIO_API_KEY": "test-key"}, clear=False):
@@ -86,25 +123,58 @@ class LiveDataSourceTests(unittest.TestCase):
         self.assertEqual(payload["current_odds"], -115)
         self.assertIn("implied_probability", payload)
 
+    def test_media_client_uses_live_context_when_configured(self):
+        with patch.dict(os.environ, {"MEDIA_BROADCAST_API_KEY": "test-key"}, clear=False):
+            client = MediaBroadcastClient(fetcher=fake_media_fetcher)
+            payload = client.fetch_player_context("Stephen Curry", {"team": "Golden State Warriors"})
+
+        self.assertEqual(payload["player_id"], "30")
+        self.assertEqual(payload["source_mode"], "live")
+        self.assertEqual(payload["broadcast_exposure"], 0.9)
+
+    def test_fantasy_client_uses_live_context_when_configured(self):
+        with patch.dict(os.environ, {"FANTASY_SPORTS_API_KEY": "test-key"}, clear=False):
+            client = FantasySportsAPIClient(fetcher=fake_fantasy_fetcher)
+            payload = client.fetch_player_context("Stephen Curry", {"team": "Golden State Warriors"})
+
+        self.assertEqual(payload["player_id"], "30")
+        self.assertEqual(payload["source_mode"], "live")
+        self.assertEqual(payload["fantasy_projection"], 37.5)
+
     def test_service_source_status_reflects_configured_env_vars(self):
         with patch.dict(
             os.environ,
-            {"SPORTSDATAIO_API_KEY": "sports-key", "ODDS_API_KEY": "odds-key"},
+            {
+                "SPORTSDATAIO_API_KEY": "sports-key",
+                "MEDIA_BROADCAST_API_KEY": "media-key",
+                "FANTASY_SPORTS_API_KEY": "fantasy-key",
+                "ODDS_API_KEY": "odds-key",
+            },
             clear=False,
         ):
             service = PredictionService(
                 sports_client=SportsDataIOClient(fetcher=fake_sports_fetcher),
+                media_client=MediaBroadcastClient(fetcher=fake_media_fetcher),
+                fantasy_client=FantasySportsAPIClient(fetcher=fake_fantasy_fetcher),
                 odds_client=OddsAPIClient(fetcher=fake_odds_fetcher),
             )
             status = service.source_status()
 
         self.assertTrue(status["sports_data_io"]["configured"])
+        self.assertTrue(status["media_broadcast"]["configured"])
+        self.assertTrue(status["fantasy_sports_api"]["configured"])
         self.assertTrue(status["odds_api"]["configured"])
         self.assertEqual(status["sports_data_io"]["mode"], "live")
+        self.assertEqual(status["media_broadcast"]["mode"], "live")
+        self.assertEqual(status["fantasy_sports_api"]["mode"], "live")
         self.assertEqual(status["odds_api"]["mode"], "live")
         self.assertIsNone(status["sports_data_io"]["last_call_succeeded"])
+        self.assertIsNone(status["media_broadcast"]["last_call_succeeded"])
+        self.assertIsNone(status["fantasy_sports_api"]["last_call_succeeded"])
         self.assertIsNone(status["odds_api"]["last_call_succeeded"])
         self.assertIsNone(status["sports_data_io"]["last_error_message"])
+        self.assertIsNone(status["media_broadcast"]["last_error_message"])
+        self.assertIsNone(status["fantasy_sports_api"]["last_error_message"])
         self.assertIsNone(status["odds_api"]["last_error_message"])
 
     def test_source_status_tracks_last_upstream_success_and_error(self):
@@ -113,17 +183,32 @@ class LiveDataSourceTests(unittest.TestCase):
 
         with patch.dict(
             os.environ,
-            {"SPORTSDATAIO_API_KEY": "sports-key", "ODDS_API_KEY": "odds-key"},
+            {
+                "SPORTSDATAIO_API_KEY": "sports-key",
+                "MEDIA_BROADCAST_API_KEY": "media-key",
+                "FANTASY_SPORTS_API_KEY": "fantasy-key",
+                "ODDS_API_KEY": "odds-key",
+            },
             clear=False,
         ):
             sports_client = SportsDataIOClient(fetcher=fake_sports_fetcher)
+            media_client = MediaBroadcastClient(fetcher=fake_media_fetcher)
+            fantasy_client = FantasySportsAPIClient(fetcher=failing_fetcher)
             odds_client = OddsAPIClient(fetcher=failing_fetcher)
             sports_client.fetch_player_context("Stephen Curry", {"team": "Golden State Warriors"})
+            media_client.fetch_player_context("Stephen Curry", {"team": "Golden State Warriors"})
+            fantasy_client.fetch_player_context("Stephen Curry", {"team": "Golden State Warriors"})
             odds_client.fetch_game_market("Golden State Warriors")
             sports_status = sports_client.source_status()
+            media_status = media_client.source_status()
+            fantasy_status = fantasy_client.source_status()
             odds_status = odds_client.source_status()
 
             self.assertTrue(sports_status["last_call_succeeded"])
+            self.assertTrue(media_status["last_call_succeeded"])
+            self.assertIsNone(media_status["last_error_message"])
+            self.assertFalse(fantasy_status["last_call_succeeded"])
+            self.assertIn("provider unavailable", fantasy_status["last_error_message"])
             self.assertIsNone(sports_status["last_error_message"])
             self.assertFalse(odds_status["last_call_succeeded"])
             self.assertIn("provider unavailable", odds_status["last_error_message"])

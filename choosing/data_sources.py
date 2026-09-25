@@ -133,6 +133,25 @@ def search_teams(query: str = "") -> list[dict]:
     return results
 
 
+def _resolve_local_player(player_reference: str, team: str | None = None) -> dict:
+    matches = search_players(player_reference, team)
+    if matches:
+        return matches[0]
+    return {
+        "id": _slugify(player_reference),
+        "name": _titleize(player_reference),
+        "team": _titleize(team) if team else "Open Market",
+    }
+
+
+def _resolve_local_team(team_reference: str) -> dict:
+    matches = search_teams(team_reference)
+    if matches:
+        return matches[0]
+    title = _titleize(team_reference)
+    return {"game_id": _slugify(team_reference), "team": title, "opponent": "Market Average"}
+
+
 class SportsDataIOClient:
     source_name = "SportsDataIO"
 
@@ -228,25 +247,14 @@ class SportsDataIOClient:
             live_match = self._resolve_live_player(player_reference, team)
             if live_match:
                 return live_match
-        matches = search_players(player_reference, team)
-        if matches:
-            return matches[0]
-        return {
-            "id": _slugify(player_reference),
-            "name": _titleize(player_reference),
-            "team": _titleize(team) if team else "Open Market",
-        }
+        return _resolve_local_player(player_reference, team)
 
     def resolve_team(self, team_reference: str) -> dict:
         if self.api_key:
             live_match = self._resolve_live_team(team_reference)
             if live_match:
                 return live_match
-        matches = search_teams(team_reference)
-        if matches:
-            return matches[0]
-        title = _titleize(team_reference)
-        return {"game_id": _slugify(team_reference), "team": title, "opponent": "Market Average"}
+        return _resolve_local_team(team_reference)
 
     def _request(self, path: str, params: dict | None = None):
         if not self.api_key:
@@ -535,3 +543,233 @@ class OddsAPIClient:
                 "implied_probability": consensus_probability,
             }
         return None
+
+
+class MediaBroadcastClient:
+    source_name = "Media & Broadcast"
+
+    def __init__(self, fetcher=None) -> None:
+        self.fetcher = fetcher or _http_get_json
+        self._last_call_succeeded = None
+        self._last_error_message = None
+
+    @property
+    def api_key(self) -> str:
+        return os.environ.get("MEDIA_BROADCAST_API_KEY", "").strip()
+
+    @property
+    def base_url(self) -> str:
+        return os.environ.get("MEDIA_BROADCAST_BASE_URL", "https://media-broadcast.example.com").rstrip("/")
+
+    def source_status(self) -> dict:
+        configured = bool(self.api_key)
+        return {
+            "configured": configured,
+            "mode": "live" if configured else "fallback",
+            "last_call_succeeded": self._last_call_succeeded,
+            "last_error_message": self._last_error_message if configured else "API key not configured",
+        }
+
+    def fetch_player_context(self, player_id: str, overrides: dict | None = None) -> dict:
+        overrides = overrides or {}
+        player = _resolve_local_player(player_id, overrides.get("team"))
+        payload = {
+            "player_id": player["id"],
+            "player_name": player["name"],
+            "team": player["team"],
+            "media_sentiment": overrides.get("media_sentiment", stable_float(f"{player['id']}:media", 0.35, 0.88)),
+            "broadcast_exposure": overrides.get(
+                "broadcast_exposure",
+                stable_float(f"{player['id']}:broadcast", 0.25, 0.95),
+            ),
+            "narrative_pressure": overrides.get(
+                "narrative_pressure",
+                stable_float(f"{player['id']}:narrative", 0.08, 0.72),
+            ),
+        }
+        live_payload = self._fetch_live_player_context(player)
+        if live_payload:
+            payload.update({key: value for key, value in live_payload.items() if value is not None})
+            payload["source_mode"] = "live"
+        else:
+            payload["source_mode"] = "fallback"
+        return payload
+
+    def fetch_game_context(self, game_id: str, overrides: dict | None = None) -> dict:
+        overrides = overrides or {}
+        game = _resolve_local_team(game_id)
+        payload = {
+            "game_id": game["game_id"],
+            "team": game["team"],
+            "opponent": game["opponent"],
+            "broadcast_heat": overrides.get("broadcast_heat", stable_float(f"{game['game_id']}:heat", 0.3, 0.92)),
+            "audience_confidence": overrides.get(
+                "audience_confidence",
+                stable_float(f"{game['game_id']}:audience", 0.35, 0.84),
+            ),
+            "narrative_pressure": overrides.get(
+                "narrative_pressure",
+                stable_float(f"{game['game_id']}:narrative", 0.08, 0.7),
+            ),
+        }
+        live_payload = self._fetch_live_game_context(game)
+        if live_payload:
+            payload.update({key: value for key, value in live_payload.items() if value is not None})
+            payload["source_mode"] = "live"
+        else:
+            payload["source_mode"] = "fallback"
+        return payload
+
+    def _request(self, path: str):
+        if not self.api_key:
+            self._last_call_succeeded = None
+            self._last_error_message = "API key not configured"
+            return None
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        try:
+            payload = self.fetcher(url, headers={"Accept": "application/json", "X-API-Key": self.api_key})
+            self._last_call_succeeded = True
+            self._last_error_message = None
+            return payload
+        except (HTTPError, URLError, TimeoutError, ValueError, OSError) as exc:
+            self._last_call_succeeded = False
+            self._last_error_message = str(exc)
+            return None
+
+    def _fetch_live_player_context(self, player: dict) -> dict | None:
+        payload = self._request(f"players/{player['id']}")
+        if not isinstance(payload, dict):
+            return None
+        return {
+            "media_sentiment": _safe_float(payload.get("media_sentiment")),
+            "broadcast_exposure": _safe_float(payload.get("broadcast_exposure")),
+            "narrative_pressure": _safe_float(payload.get("narrative_pressure")),
+        }
+
+    def _fetch_live_game_context(self, game: dict) -> dict | None:
+        payload = self._request(f"games/{game['game_id']}")
+        if not isinstance(payload, dict):
+            return None
+        return {
+            "broadcast_heat": _safe_float(payload.get("broadcast_heat")),
+            "audience_confidence": _safe_float(payload.get("audience_confidence")),
+            "narrative_pressure": _safe_float(payload.get("narrative_pressure")),
+        }
+
+
+class FantasySportsAPIClient:
+    source_name = "Fantasy Sports API"
+
+    def __init__(self, fetcher=None) -> None:
+        self.fetcher = fetcher or _http_get_json
+        self._last_call_succeeded = None
+        self._last_error_message = None
+
+    @property
+    def api_key(self) -> str:
+        return os.environ.get("FANTASY_SPORTS_API_KEY", "").strip()
+
+    @property
+    def base_url(self) -> str:
+        return os.environ.get("FANTASY_SPORTS_BASE_URL", "https://fantasy-sports.example.com").rstrip("/")
+
+    def source_status(self) -> dict:
+        configured = bool(self.api_key)
+        return {
+            "configured": configured,
+            "mode": "live" if configured else "fallback",
+            "last_call_succeeded": self._last_call_succeeded,
+            "last_error_message": self._last_error_message if configured else "API key not configured",
+        }
+
+    def fetch_player_context(self, player_id: str, overrides: dict | None = None) -> dict:
+        overrides = overrides or {}
+        player = _resolve_local_player(player_id, overrides.get("team"))
+        payload = {
+            "player_id": player["id"],
+            "player_name": player["name"],
+            "team": player["team"],
+            "fantasy_projection": overrides.get(
+                "fantasy_projection",
+                stable_float(f"{player['id']}:fantasy_projection", 14, 42),
+            ),
+            "fantasy_value_rating": overrides.get(
+                "fantasy_value_rating",
+                stable_float(f"{player['id']}:fantasy_value", 0.28, 0.94),
+            ),
+            "ownership_projection": overrides.get(
+                "ownership_projection",
+                stable_float(f"{player['id']}:ownership", 0.1, 0.65),
+            ),
+        }
+        live_payload = self._fetch_live_player_context(player)
+        if live_payload:
+            payload.update({key: value for key, value in live_payload.items() if value is not None})
+            payload["source_mode"] = "live"
+        else:
+            payload["source_mode"] = "fallback"
+        return payload
+
+    def fetch_game_context(self, game_id: str, overrides: dict | None = None) -> dict:
+        overrides = overrides or {}
+        game = _resolve_local_team(game_id)
+        payload = {
+            "game_id": game["game_id"],
+            "team": game["team"],
+            "opponent": game["opponent"],
+            "fantasy_market_support": overrides.get(
+                "fantasy_market_support",
+                stable_float(f"{game['game_id']}:fantasy_support", 0.3, 0.88),
+            ),
+            "fantasy_points_total": overrides.get(
+                "fantasy_points_total",
+                stable_float(f"{game['game_id']}:fantasy_total", 198, 244),
+            ),
+            "injury_leverage": overrides.get(
+                "injury_leverage",
+                stable_float(f"{game['game_id']}:injury_leverage", 0.05, 0.7),
+            ),
+        }
+        live_payload = self._fetch_live_game_context(game)
+        if live_payload:
+            payload.update({key: value for key, value in live_payload.items() if value is not None})
+            payload["source_mode"] = "live"
+        else:
+            payload["source_mode"] = "fallback"
+        return payload
+
+    def _request(self, path: str):
+        if not self.api_key:
+            self._last_call_succeeded = None
+            self._last_error_message = "API key not configured"
+            return None
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        try:
+            payload = self.fetcher(url, headers={"Accept": "application/json", "X-API-Key": self.api_key})
+            self._last_call_succeeded = True
+            self._last_error_message = None
+            return payload
+        except (HTTPError, URLError, TimeoutError, ValueError, OSError) as exc:
+            self._last_call_succeeded = False
+            self._last_error_message = str(exc)
+            return None
+
+    def _fetch_live_player_context(self, player: dict) -> dict | None:
+        payload = self._request(f"players/{player['id']}")
+        if not isinstance(payload, dict):
+            return None
+        return {
+            "fantasy_projection": _safe_float(payload.get("fantasy_projection")),
+            "fantasy_value_rating": _safe_float(payload.get("fantasy_value_rating")),
+            "ownership_projection": _safe_float(payload.get("ownership_projection")),
+        }
+
+    def _fetch_live_game_context(self, game: dict) -> dict | None:
+        payload = self._request(f"games/{game['game_id']}")
+        if not isinstance(payload, dict):
+            return None
+        return {
+            "fantasy_market_support": _safe_float(payload.get("fantasy_market_support")),
+            "fantasy_points_total": _safe_float(payload.get("fantasy_points_total")),
+            "injury_leverage": _safe_float(payload.get("injury_leverage")),
+        }

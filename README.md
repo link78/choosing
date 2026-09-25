@@ -1,6 +1,6 @@
 # choosing
 
-Sports betting application built on existing sports-data and odds integrations.
+Sports betting application built on sports data, media and broadcast context, fantasy projections, and betting odds integrations.
 
 ## Application
 
@@ -23,7 +23,14 @@ Print the report as JSON:
 python -m choosing --json
 ```
 
-The application uses the existing SportsDataIO-style and Odds API-style integrations to produce:
+The application uses these upstream categories to produce stronger predictions:
+
+- SportsDataIO
+- Media & Broadcast
+- Fantasy Sports API
+- The Odds API
+
+Together they power:
 
 - player watchlists
 - game betting opportunities
@@ -49,18 +56,22 @@ The repository still includes the underlying HTTP prediction utilities:
 Set these environment variables to fetch live upstream data before prediction and edge computation:
 
 - `SPORTSDATAIO_API_KEY`
+- `MEDIA_BROADCAST_API_KEY`
+- `FANTASY_SPORTS_API_KEY`
 - `ODDS_API_KEY`
 
 Optional live-data configuration:
 
 - `SPORTSDATAIO_BASE_URL` (defaults to `https://api.sportsdata.io/v3/nba`)
 - `SPORTSDATAIO_SEASON` (defaults to `2024`)
+- `MEDIA_BROADCAST_BASE_URL` (defaults to `https://media-broadcast.example.com`)
+- `FANTASY_SPORTS_BASE_URL` (defaults to `https://fantasy-sports.example.com`)
 - `ODDS_API_BASE_URL` (defaults to `https://api.the-odds-api.com/v4`)
 - `ODDS_API_SPORT` (defaults to `basketball_nba`)
 
 Behavior:
 
-- when keys are configured, the app attempts live SportsDataIO and Odds API requests first
+- when keys are configured, the app attempts live SportsDataIO, Media & Broadcast, Fantasy Sports API, and Odds API requests first
 - if a live request fails or returns unusable data, the app safely falls back to the existing deterministic local model inputs
 - `/health` reports whether each upstream source is configured, whether its most recent upstream call succeeded, and the last error message when a provider fails
 

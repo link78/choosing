@@ -25,6 +25,10 @@ class BettingApplicationTests(unittest.TestCase):
         )
 
         self.assertEqual(report["meta"]["bankroll"], 500)
+        self.assertEqual(
+            report["meta"]["data_sources"],
+            ["SportsDataIO", "Media & Broadcast", "Fantasy Sports API", "The Odds API"],
+        )
         self.assertEqual(report["portfolio_summary"]["recommended_bets"], 1)
         self.assertEqual(report["portfolio_summary"]["total_recommended_stake"], 10.0)
         self.assertEqual(report["game_cards"][0]["recommendation"]["stake_label"], "medium")
@@ -45,7 +49,12 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertIn("player_profile", report["player_cards"][0])
         self.assertIn("readiness_score", report["player_cards"][0]["player_profile"])
         self.assertIn("injury_status", report["player_cards"][0]["player_profile"])
+        self.assertGreaterEqual(
+            report["player_cards"][0]["player_profile"]["computation_data"]["fantasy_value_rating"],
+            0,
+        )
         self.assertEqual(report["game_cards"][0]["game_id"], "warriors-lakers")
+        self.assertIn("context_signals", report["game_cards"][0])
         self.assertEqual(report["portfolio_summary"]["highest_edge_game"], "warriors-lakers")
 
     def test_render_text_report_contains_sections(self):

@@ -20,6 +20,11 @@ PLAYER_FLOAT_FIELDS = {
     "fouls_cards",
     "team_instability",
     "media_sentiment",
+    "broadcast_exposure",
+    "narrative_pressure",
+    "fantasy_projection",
+    "fantasy_value_rating",
+    "ownership_projection",
 }
 
 GAME_FLOAT_FIELDS = {
@@ -32,6 +37,11 @@ GAME_FLOAT_FIELDS = {
     "line_movement",
     "closing_line_value",
     "expected_points_adjustment",
+    "broadcast_heat",
+    "audience_confidence",
+    "fantasy_market_support",
+    "fantasy_points_total",
+    "injury_leverage",
 }
 
 GAME_INT_FIELDS = {"opening_odds", "current_odds", "odds"}

@@ -9,7 +9,7 @@ def app_metadata() -> dict:
     return {
         "name": "choosing",
         "description": "Player-centric sports prediction system for smarter betting decisions.",
-        "data_sources": ["SportsDataIO", "The Odds API"],
+        "data_sources": ["SportsDataIO", "Media & Broadcast", "Fantasy Sports API", "The Odds API"],
         "endpoints": {
             "health": "/health",
             "player_prediction": "/player/{id}/prediction",
@@ -189,6 +189,16 @@ def render_home_page() -> str:
           <span class="badge">Player intelligence</span>
           <div class="stat">SportsDataIO</div>
           <p class="muted">Recent form, fatigue, injuries, consistency, matchup, and team context.</p>
+        </article>
+        <article class="card">
+          <span class="badge">Broadcast context</span>
+          <div class="stat">Media &amp; Broadcast</div>
+          <p class="muted">Narrative pressure, TV exposure, and audience confidence around player and game spots.</p>
+        </article>
+        <article class="card">
+          <span class="badge">Fantasy overlay</span>
+          <div class="stat">Fantasy Sports API</div>
+          <p class="muted">Projection-based scoring support, ownership, and value signals to sharpen expectations.</p>
         </article>
         <article class="card">
           <span class="badge">Market intelligence</span>

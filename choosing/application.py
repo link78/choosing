@@ -47,7 +47,7 @@ class BettingApplication:
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "bankroll": round(bankroll, 2),
                 "advisory_only": True,
-                "data_sources": ["SportsDataIO", "The Odds API"],
+                "data_sources": ["SportsDataIO", "Media & Broadcast", "Fantasy Sports API", "The Odds API"],
             },
             "player_cards": player_cards,
             "game_cards": game_cards,
@@ -94,6 +94,7 @@ class BettingApplication:
         return {
             "game_id": edge["game_id"],
             "team_prediction": edge["team_prediction"],
+            "context_signals": edge["context_signals"],
             "market_signals": edge["market_signals"],
             "betting_edge": edge["betting_edge"],
             "recommendation": {
