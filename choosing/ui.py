@@ -194,10 +194,10 @@ def render_home_page() -> str:
         <p class="muted">Look up performance, risk, and availability by player name, with optional team filtering.</p>
         <form id="player-form">
           <label>Player name
-            <input id="player-id" name="player-id" value="Stephen Curry" list="player-options">
+            <input id="player-id" name="player-id" value="" placeholder="Search player name" list="player-options">
           </label>
           <label>Team (optional)
-            <input id="player-team" name="player-team" value="Golden State Warriors" list="team-options">
+            <input id="player-team" name="player-team" value="" placeholder="Filter by team" list="team-options">
           </label>
           <datalist id="player-options">{player_options}</datalist>
           <datalist id="team-options">{team_options}</datalist>
@@ -211,7 +211,7 @@ def render_home_page() -> str:
         <p class="muted">Look up predicted outcomes and betting edges by team name.</p>
         <form id="game-form">
           <label>Team name
-            <input id="game-id" name="game-id" value="Golden State Warriors" list="team-options">
+            <input id="game-id" name="game-id" value="" placeholder="Search team name" list="team-options">
           </label>
           <label>Model probability (optional)
             <input id="model-probability" name="model-probability" value="0.61" inputmode="decimal">
@@ -253,6 +253,10 @@ def render_home_page() -> str:
           <div class="metric"><strong>Minutes</strong><br>${{payload.predictions.expected_minutes}}</div>
           <div class="metric"><strong>Points</strong><br>${{payload.predictions.expected_points}}</div>
           <div class="metric"><strong>Scoring outlook</strong><br>${{payload.predictions.scoring_outlook}}</div>
+          <div class="metric"><strong>Scoring band</strong><br>${{payload.player_profile.scoring_band}}</div>
+          <div class="metric"><strong>Readiness score</strong><br>${{payload.player_profile.readiness_score}}</div>
+          <div class="metric"><strong>Risk level</strong><br>${{payload.player_profile.risk_level}}</div>
+          <div class="metric"><strong>Role</strong><br>${{payload.player_profile.projected_role}}</div>
           <div class="metric"><strong>Performance</strong><br>${{payload.predictions.expected_performance}}</div>
           <div class="metric"><strong>Availability</strong><br>${{payload.predictions.availability_probability}}</div>
           <div class="metric"><strong>Underperformance risk</strong><br>${{payload.predictions.underperformance_risk}}</div>

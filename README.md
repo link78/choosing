@@ -35,6 +35,7 @@ The application uses the existing SportsDataIO-style and Odds API-style integrat
 The repository still includes the underlying HTTP prediction utilities:
 
 - `GET /player/{id}/prediction` supports player ids or player names, plus optional `team=...`, and includes predicted points
+  and a computed `player_profile`
 - `GET /game/{id}/edge` supports game ids or team names
 - `GET /lookup/players?query={name}`
 - `GET /lookup/teams?query={team}`

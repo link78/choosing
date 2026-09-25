@@ -80,6 +80,7 @@ class BettingApplication:
             "underperformance_risk": prediction["predictions"]["underperformance_risk"],
             "likely_to_score": prediction["predictions"]["likely_to_score"],
             "scoring_outlook": prediction["predictions"]["scoring_outlook"],
+            "player_profile": prediction["player_profile"],
             "flags": flags,
         }
 

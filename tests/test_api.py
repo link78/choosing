@@ -43,6 +43,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("Player name", response["raw_body"])
         self.assertIn("Team name", response["raw_body"])
         self.assertNotIn("Jayson Tatum", response["raw_body"])
+        self.assertIn('placeholder="Search player name"', response["raw_body"])
+        self.assertIn('placeholder="Search team name"', response["raw_body"])
 
     def test_app_metadata_endpoint_returns_machine_readable_json(self):
         response = request("/app.json")
@@ -74,6 +76,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("availability_probability", predictions)
         self.assertIn("likely_to_score", predictions)
         self.assertIn("scoring_outlook", predictions)
+        self.assertIn("player_profile", response["body"])
+        self.assertIn("computation_data", response["body"]["player_profile"])
         self.assertIn("player_name", response["body"])
         self.assertIn("team", response["body"])
 
@@ -84,6 +88,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["player_id"], "30")
         self.assertEqual(response["body"]["player_name"], "Stephen Curry")
         self.assertEqual(response["body"]["team"], "Golden State Warriors")
+        self.assertIn(response["body"]["player_profile"]["risk_level"], {"Low", "Moderate", "High"})
 
     def test_player_prediction_endpoint_applies_overrides(self):
         response = request(

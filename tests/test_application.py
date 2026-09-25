@@ -42,6 +42,8 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertEqual(report["player_cards"][0]["player_id"], "30")
         self.assertEqual(report["player_cards"][0]["player_name"], "Stephen Curry")
         self.assertIn(report["player_cards"][0]["scoring_outlook"], {"Likely to score", "Not likely to score"})
+        self.assertIn("player_profile", report["player_cards"][0])
+        self.assertIn("readiness_score", report["player_cards"][0]["player_profile"])
         self.assertEqual(report["game_cards"][0]["game_id"], "warriors-lakers")
         self.assertEqual(report["portfolio_summary"]["highest_edge_game"], "warriors-lakers")
 
@@ -68,6 +70,17 @@ class BettingApplicationTests(unittest.TestCase):
         payload = json.loads(output.getvalue())
         self.assertEqual(payload["meta"]["bankroll"], 250)
         self.assertEqual(payload["player_cards"][0]["player_id"], "7")
+
+    def test_main_can_emit_empty_report_without_defaults(self):
+        output = StringIO()
+
+        with redirect_stdout(output):
+            exit_code = main(["--json"])
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["player_cards"], [])
+        self.assertEqual(payload["game_cards"], [])
 
 
 if __name__ == "__main__":

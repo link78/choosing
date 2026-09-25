@@ -29,6 +29,7 @@ class PredictionService:
         payload["meta"] = self._meta(sports_data["player_id"], "player")
         payload["player_name"] = sports_data["player_name"]
         payload["team"] = sports_data["team"]
+        payload["player_profile"] = _build_player_profile(payload, sports_data)
         payload["source_snapshots"] = {
             "sports_data_io": {
                 "mode": sports_data.get("source_mode", "fallback"),
@@ -91,3 +92,51 @@ def _recommended_stake(edge: float) -> str:
     if absolute_edge < 0.12:
         return "medium"
     return "strong"
+
+
+def _build_player_profile(prediction: dict, sports_data: dict) -> dict:
+    expected_points = prediction["predictions"]["expected_points"]
+    expected_minutes = prediction["predictions"]["expected_minutes"]
+    availability_probability = prediction["predictions"]["availability_probability"]
+    underperformance_risk = prediction["predictions"]["underperformance_risk"]
+    readiness_score = clamp(
+        availability_probability * 0.4
+        + prediction["player_signals"]["recent_form"] * 0.25
+        + prediction["player_signals"]["team_context"] * 0.2
+        + prediction["player_signals"]["consistency"] * 0.15,
+        0,
+        1,
+    )
+    scoring_index = clamp(expected_points / 35, 0, 1)
+    if expected_points >= 26:
+        scoring_band = "High-volume scorer"
+    elif expected_points >= 18:
+        scoring_band = "Reliable scorer"
+    else:
+        scoring_band = "Low-volume scorer"
+
+    if underperformance_risk >= 0.55:
+        risk_level = "High"
+    elif underperformance_risk >= 0.35:
+        risk_level = "Moderate"
+    else:
+        risk_level = "Low"
+
+    return {
+        "readiness_score": round(readiness_score, 3),
+        "scoring_index": round(scoring_index, 3),
+        "scoring_band": scoring_band,
+        "risk_level": risk_level,
+        "projected_role": "Featured scorer" if expected_minutes >= 32 or expected_points >= 24 else "Rotation scorer",
+        "computation_data": {
+            "recent_form": prediction["player_signals"]["recent_form"],
+            "consistency": prediction["player_signals"]["consistency"],
+            "team_context": prediction["player_signals"]["team_context"],
+            "workload_fatigue": prediction["player_signals"]["workload_fatigue"],
+            "matchup_difficulty": prediction["player_signals"]["matchup_difficulty"],
+            "availability_probability": availability_probability,
+            "expected_minutes": expected_minutes,
+            "expected_points": expected_points,
+            "source_mode": sports_data.get("source_mode", "fallback"),
+        },
+    }
