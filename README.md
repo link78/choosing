@@ -1,15 +1,36 @@
 # choosing
 
-Player-centric sports prediction API.
+Sports betting application built on existing sports-data and odds integrations.
 
-## Endpoints
+## Application
 
-- `GET /player/{id}/prediction` returns player signals plus expected minutes, expected performance, underperformance risk, and availability probability.
-- `GET /game/{id}/edge` returns team prediction, market signals, and betting edge versus implied bookmaker probability.
-- `GET /` returns an application summary and advertised endpoints.
-- `GET /health` returns readiness plus configured source status.
+Run the application:
 
-Both prediction endpoints accept optional query-string overrides so you can simulate SportsDataIO and bookmaker inputs without external dependencies.
+```bash
+python -m choosing --players 7,42 --games finals,demo --bankroll 1000
+```
+
+Print the report as JSON:
+
+```bash
+python -m choosing --json
+```
+
+The application uses the existing SportsDataIO-style and Odds API-style integrations to produce:
+
+- player watchlists
+- game betting opportunities
+- edge-based stake suggestions
+- bankroll-aware portfolio summaries
+
+## Existing API utilities
+
+The repository still includes the underlying HTTP prediction utilities:
+
+- `GET /player/{id}/prediction`
+- `GET /game/{id}/edge`
+- `GET /`
+- `GET /health`
 
 ## Run
 

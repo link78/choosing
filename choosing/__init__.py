@@ -1,1 +1,1 @@
-"""Choosing prediction API package."""
+"""Choosing sports betting application package."""

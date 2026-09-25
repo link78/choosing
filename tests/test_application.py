@@ -1,0 +1,57 @@
+import json
+import unittest
+from contextlib import redirect_stdout
+from io import StringIO
+
+from choosing.__main__ import main
+from choosing.application import BettingApplication, render_text_report
+
+
+class BettingApplicationTests(unittest.TestCase):
+    def test_build_report_creates_betting_summary(self):
+        application = BettingApplication()
+
+        report = application.build_report(
+            player_ids=["7"],
+            game_ids=["finals"],
+            bankroll=500,
+            player_overrides={"7": {"availability": 0.6, "injury_risk": 0.45}},
+            game_overrides={
+                "finals": {
+                    "sports": {"model_probability": 0.61},
+                    "odds": {"current_odds": -110, "steam_move": True},
+                }
+            },
+        )
+
+        self.assertEqual(report["meta"]["bankroll"], 500)
+        self.assertEqual(report["portfolio_summary"]["recommended_bets"], 1)
+        self.assertEqual(report["portfolio_summary"]["total_recommended_stake"], 10.0)
+        self.assertEqual(report["game_cards"][0]["recommendation"]["stake_label"], "medium")
+        self.assertIn("availability_risk", report["player_cards"][0]["flags"])
+
+    def test_render_text_report_contains_sections(self):
+        application = BettingApplication()
+        report = application.build_report(player_ids=["7"], game_ids=["finals"])
+
+        rendered = render_text_report(report)
+
+        self.assertIn("CHOOSING SPORTS BETTING REPORT", rendered)
+        self.assertIn("PLAYER WATCHLIST", rendered)
+        self.assertIn("BETTING OPPORTUNITIES", rendered)
+        self.assertIn("PORTFOLIO SUMMARY", rendered)
+
+    def test_main_can_emit_json(self):
+        output = StringIO()
+
+        with redirect_stdout(output):
+            exit_code = main(["--players", "7", "--games", "finals", "--bankroll", "250", "--json"])
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["meta"]["bankroll"], 250)
+        self.assertEqual(payload["player_cards"][0]["player_id"], "7")
+
+
+if __name__ == "__main__":
+    unittest.main()
