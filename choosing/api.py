@@ -5,6 +5,7 @@ import os
 from urllib.parse import parse_qs
 
 from .service import PredictionService
+from .ui import app_metadata, render_home_page
 
 
 PLAYER_FLOAT_FIELDS = {
@@ -49,6 +50,18 @@ def json_response(start_response, status: str, payload: dict) -> list[bytes]:
         ],
     )
     return [body]
+
+
+def html_response(start_response, status: str, body: str) -> list[bytes]:
+    encoded = body.encode("utf-8")
+    start_response(
+        status,
+        [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Content-Length", str(len(encoded))),
+        ],
+    )
+    return [encoded]
 
 
 def _parse_bool(raw_value: str) -> bool:
@@ -107,21 +120,10 @@ def app(environ, start_response):
         return json_response(start_response, "405 Method Not Allowed", {"error": "Method not allowed"})
 
     if path == "/":
-        return json_response(
-            start_response,
-            "200 OK",
-            {
-                "name": "choosing",
-                "description": "Player-centric sports prediction system for smarter betting decisions.",
-                "data_sources": ["SportsDataIO", "The Odds API"],
-                "endpoints": {
-                    "health": "/health",
-                    "player_prediction": "/player/{id}/prediction",
-                    "game_edge": "/game/{id}/edge",
-                },
-                "advisory_only": True,
-            },
-        )
+        return html_response(start_response, "200 OK", render_home_page())
+
+    if path == "/app.json":
+        return json_response(start_response, "200 OK", app_metadata())
 
     if path == "/health":
         return json_response(

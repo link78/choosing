@@ -4,6 +4,13 @@ Sports betting application built on existing sports-data and odds integrations.
 
 ## Application
 
+Open the mobile-friendly web app at the root path:
+
+```bash
+python -m choosing.api
+# then visit http://127.0.0.1:8000/
+```
+
 Run the application:
 
 ```bash
@@ -29,7 +36,8 @@ The repository still includes the underlying HTTP prediction utilities:
 
 - `GET /player/{id}/prediction`
 - `GET /game/{id}/edge`
-- `GET /`
+- `GET /` for the responsive UI
+- `GET /app.json` for machine-readable app metadata
 - `GET /health`
 
 ## Run

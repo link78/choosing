@@ -23,13 +23,25 @@ def request(path: str):
             start_response,
         )
     )
-    captured["body"] = json.loads(body.decode("utf-8"))
+    captured["headers_map"] = {name: value for name, value in captured["headers"]}
+    captured["raw_body"] = body.decode("utf-8")
+    if captured["headers_map"]["Content-Type"].startswith("application/json"):
+        captured["body"] = json.loads(captured["raw_body"])
     return captured
 
 
 class PredictionApiTests(unittest.TestCase):
     def test_root_endpoint_describes_application(self):
         response = request("/")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["headers_map"]["Content-Type"], "text/html; charset=utf-8")
+        self.assertIn("Mobile friendly betting dashboard", response["raw_body"])
+        self.assertIn('name="viewport"', response["raw_body"])
+        self.assertIn("Player prediction", response["raw_body"])
+
+    def test_app_metadata_endpoint_returns_machine_readable_json(self):
+        response = request("/app.json")
 
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(response["body"]["data_sources"], ["SportsDataIO", "The Odds API"])
