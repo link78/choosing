@@ -148,6 +148,21 @@ def render_home_page() -> str:
       border-radius: 12px;
       background: rgba(255,255,255,0.04);
     }}
+    .profile-stack {{
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }}
+    .profile-panel {{
+      padding: 14px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+    }}
+    .profile-panel h3 {{
+      margin-bottom: 10px;
+      font-size: 14px;
+    }}
     pre {{
       overflow: auto;
       white-space: pre-wrap;
@@ -247,19 +262,31 @@ def render_home_page() -> str:
 
     function playerMarkup(payload) {{
       return `
-        <div class="metric-grid">
-          <div class="metric"><strong>Player</strong><br>${{payload.player_name}}</div>
-          <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
-          <div class="metric"><strong>Minutes</strong><br>${{payload.predictions.expected_minutes}}</div>
-          <div class="metric"><strong>Points</strong><br>${{payload.predictions.expected_points}}</div>
-          <div class="metric"><strong>Scoring outlook</strong><br>${{payload.predictions.scoring_outlook}}</div>
-          <div class="metric"><strong>Scoring band</strong><br>${{payload.player_profile.scoring_band}}</div>
-          <div class="metric"><strong>Readiness score</strong><br>${{payload.player_profile.readiness_score}}</div>
-          <div class="metric"><strong>Risk level</strong><br>${{payload.player_profile.risk_level}}</div>
-          <div class="metric"><strong>Role</strong><br>${{payload.player_profile.projected_role}}</div>
-          <div class="metric"><strong>Performance</strong><br>${{payload.predictions.expected_performance}}</div>
-          <div class="metric"><strong>Availability</strong><br>${{payload.predictions.availability_probability}}</div>
-          <div class="metric"><strong>Underperformance risk</strong><br>${{payload.predictions.underperformance_risk}}</div>
+        <div class="profile-stack">
+          <div class="profile-panel">
+            <h3>Prediction</h3>
+            <div class="metric-grid">
+              <div class="metric"><strong>Player</strong><br>${{payload.player_name}}</div>
+              <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
+              <div class="metric"><strong>Minutes</strong><br>${{payload.predictions.expected_minutes}}</div>
+              <div class="metric"><strong>Points</strong><br>${{payload.predictions.expected_points}}</div>
+              <div class="metric"><strong>Scoring outlook</strong><br>${{payload.predictions.scoring_outlook}}</div>
+              <div class="metric"><strong>Performance</strong><br>${{payload.predictions.expected_performance}}</div>
+              <div class="metric"><strong>Availability</strong><br>${{payload.predictions.availability_probability}}</div>
+              <div class="metric"><strong>Underperformance risk</strong><br>${{payload.predictions.underperformance_risk}}</div>
+            </div>
+          </div>
+          <div class="profile-panel">
+            <h3>Player profile</h3>
+            <div class="metric-grid">
+              <div class="metric"><strong>Injury status</strong><br>${{payload.player_profile.injury_status}}</div>
+              <div class="metric"><strong>Scoring band</strong><br>${{payload.player_profile.scoring_band}}</div>
+              <div class="metric"><strong>Readiness score</strong><br>${{payload.player_profile.readiness_score}}</div>
+              <div class="metric"><strong>Risk level</strong><br>${{payload.player_profile.risk_level}}</div>
+              <div class="metric"><strong>Role</strong><br>${{payload.player_profile.projected_role}}</div>
+              <div class="metric"><strong>Data mode</strong><br>${{payload.player_profile.computation_data.source_mode}}</div>
+            </div>
+          </div>
         </div>
       `;
     }}

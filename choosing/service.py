@@ -29,6 +29,7 @@ class PredictionService:
         payload["meta"] = self._meta(sports_data["player_id"], "player")
         payload["player_name"] = sports_data["player_name"]
         payload["team"] = sports_data["team"]
+        payload["injury_status"] = sports_data.get("injury_status", "Unknown")
         payload["player_profile"] = _build_player_profile(payload, sports_data)
         payload["source_snapshots"] = {
             "sports_data_io": {
@@ -36,6 +37,7 @@ class PredictionService:
                 "recent_form": round(sports_data["recent_form"], 3),
                 "workload": round(sports_data["workload"], 3),
                 "injury_risk": round(sports_data["injury_risk"], 3),
+                "injury_status": sports_data.get("injury_status", "Unknown"),
                 "availability": round(sports_data["availability"], 3),
             }
         }
@@ -128,12 +130,15 @@ def _build_player_profile(prediction: dict, sports_data: dict) -> dict:
         "scoring_band": scoring_band,
         "risk_level": risk_level,
         "projected_role": "Featured scorer" if expected_minutes >= 32 or expected_points >= 24 else "Rotation scorer",
+        "injury_status": sports_data.get("injury_status", "Unknown"),
         "computation_data": {
             "recent_form": prediction["player_signals"]["recent_form"],
             "consistency": prediction["player_signals"]["consistency"],
             "team_context": prediction["player_signals"]["team_context"],
             "workload_fatigue": prediction["player_signals"]["workload_fatigue"],
             "matchup_difficulty": prediction["player_signals"]["matchup_difficulty"],
+            "injury_risk": prediction["player_signals"]["injury_risk"],
+            "injury_status": sports_data.get("injury_status", "Unknown"),
             "availability_probability": availability_probability,
             "expected_minutes": expected_minutes,
             "expected_points": expected_points,

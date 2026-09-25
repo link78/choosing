@@ -84,6 +84,16 @@ def _status_to_risk(status: str | None) -> float | None:
     return 0.15
 
 
+def _risk_to_status(injury_risk: float) -> str:
+    if injury_risk >= 0.8:
+        return "Out"
+    if injury_risk >= 0.6:
+        return "Questionable"
+    if injury_risk >= 0.35:
+        return "Monitor"
+    return "Available"
+
+
 def _http_get_json(url: str, headers: dict[str, str] | None = None, timeout: float = 5.0):
     request = Request(url, headers=headers or {})
     with urlopen(request, timeout=timeout) as response:
@@ -147,13 +157,15 @@ class SportsDataIOClient:
     def fetch_player_context(self, player_id: str, overrides: dict | None = None) -> dict:
         overrides = overrides or {}
         player = self.resolve_player(player_id, overrides.get("team"))
+        injury_risk = overrides.get("injury_risk", stable_float(f"{player['id']}:injury", 0.05, 0.55))
         payload = {
             "player_id": player["id"],
             "player_name": player["name"],
             "team": player["team"],
             "recent_form": overrides.get("recent_form", stable_float(f"{player['id']}:form", 0.4, 0.95)),
             "workload": overrides.get("workload", stable_float(f"{player['id']}:workload", 0.2, 0.9)),
-            "injury_risk": overrides.get("injury_risk", stable_float(f"{player['id']}:injury", 0.05, 0.55)),
+            "injury_risk": injury_risk,
+            "injury_status": overrides.get("injury_status", _risk_to_status(injury_risk)),
             "consistency": overrides.get("consistency", stable_float(f"{player['id']}:consistency", 0.35, 0.95)),
             "matchup_difficulty": overrides.get(
                 "matchup_difficulty",
@@ -331,6 +343,7 @@ class SportsDataIOClient:
             "expected_points": recent_points,
             "workload": workload,
             "injury_risk": injury_risk,
+            "injury_status": injury_status or _risk_to_status(injury_risk),
             "consistency": consistency,
             "availability": clamp(1 - injury_risk * 0.8, 0.05, 0.99),
             "fouls_cards": clamp((mean(fouls) if fouls else 2.0) / 6, 0, 0.99),

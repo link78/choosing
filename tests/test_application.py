@@ -44,12 +44,13 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertIn(report["player_cards"][0]["scoring_outlook"], {"Likely to score", "Not likely to score"})
         self.assertIn("player_profile", report["player_cards"][0])
         self.assertIn("readiness_score", report["player_cards"][0]["player_profile"])
+        self.assertIn("injury_status", report["player_cards"][0]["player_profile"])
         self.assertEqual(report["game_cards"][0]["game_id"], "warriors-lakers")
         self.assertEqual(report["portfolio_summary"]["highest_edge_game"], "warriors-lakers")
 
     def test_render_text_report_contains_sections(self):
         application = BettingApplication()
-        report = application.build_report(player_ids=["7"], game_ids=["finals"])
+        report = application.build_report(player_ids=["Stephen Curry"], game_ids=["Golden State Warriors"])
 
         rendered = render_text_report(report)
 
@@ -57,6 +58,7 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertIn("PLAYER WATCHLIST", rendered)
         self.assertIn("points", rendered)
         self.assertRegex(rendered, r"likely to score|not likely to score")
+        self.assertIn("Stephen Curry", rendered)
         self.assertIn("BETTING OPPORTUNITIES", rendered)
         self.assertIn("PORTFOLIO SUMMARY", rendered)
 
