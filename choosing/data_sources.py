@@ -328,6 +328,7 @@ class SportsDataIOClient:
             injury_risk = clamp((1 - consistency) * 0.45 + workload * 0.2, 0.05, 0.8)
         return {
             "recent_form": recent_form,
+            "expected_points": recent_points,
             "workload": workload,
             "injury_risk": injury_risk,
             "consistency": consistency,

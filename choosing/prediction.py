@@ -50,6 +50,13 @@ def build_player_prediction(player_id: str, sports_data: dict | None = None) -> 
         0,
         12 + recent_form * 18 + consistency * 10 + team_context * 6 - matchup_difficulty * 7,
     )
+    expected_points = max(
+        0,
+        sports_data.get(
+            "expected_points",
+            8 + recent_form * 14 + consistency * 5 + team_context * 4 - matchup_difficulty * 5,
+        ),
+    )
     underperformance_risk = clamp(
         (1 - consistency) * 0.35
         + workload * 0.25
@@ -79,6 +86,7 @@ def build_player_prediction(player_id: str, sports_data: dict | None = None) -> 
         },
         "predictions": {
             "expected_minutes": round(expected_minutes, 1),
+            "expected_points": round(expected_points, 1),
             "expected_performance": round(expected_performance, 1),
             "underperformance_risk": round(underperformance_risk, 3),
             "availability_probability": round(availability_probability, 3),

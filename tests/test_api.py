@@ -68,6 +68,7 @@ class PredictionApiTests(unittest.TestCase):
         predictions = response["body"]["predictions"]
         self.assertGreaterEqual(predictions["expected_minutes"], 0)
         self.assertLessEqual(predictions["expected_minutes"], 48)
+        self.assertIn("expected_points", predictions)
         self.assertIn("underperformance_risk", predictions)
         self.assertIn("availability_probability", predictions)
         self.assertIn("player_name", response["body"])
@@ -89,6 +90,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(response["body"]["player_signals"]["recent_form"], 0.9)
         self.assertEqual(response["body"]["source_snapshots"]["sports_data_io"]["availability"], 0.95)
+        self.assertGreater(response["body"]["predictions"]["expected_points"], 0)
 
     def test_game_edge_endpoint_uses_model_probability_and_odds_query_params(self):
         response = request("/game/Boston%20Celtics/edge?model_probability=0.61&odds=-110")

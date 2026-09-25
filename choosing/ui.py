@@ -251,6 +251,7 @@ def render_home_page() -> str:
           <div class="metric"><strong>Player</strong><br>${{payload.player_name}}</div>
           <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
           <div class="metric"><strong>Minutes</strong><br>${{payload.predictions.expected_minutes}}</div>
+          <div class="metric"><strong>Points</strong><br>${{payload.predictions.expected_points}}</div>
           <div class="metric"><strong>Performance</strong><br>${{payload.predictions.expected_performance}}</div>
           <div class="metric"><strong>Availability</strong><br>${{payload.predictions.availability_probability}}</div>
           <div class="metric"><strong>Underperformance risk</strong><br>${{payload.predictions.underperformance_risk}}</div>

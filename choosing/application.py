@@ -73,6 +73,7 @@ class BettingApplication:
         return {
             "player_id": prediction["player_id"],
             "expected_minutes": prediction["predictions"]["expected_minutes"],
+            "expected_points": prediction["predictions"]["expected_points"],
             "expected_performance": prediction["predictions"]["expected_performance"],
             "availability_probability": prediction["predictions"]["availability_probability"],
             "underperformance_risk": prediction["predictions"]["underperformance_risk"],
@@ -111,7 +112,7 @@ def render_text_report(report: dict) -> str:
         flags = ", ".join(player["flags"]) if player["flags"] else "stable"
         lines.append(
             f"- Player {player['player_id']}: minutes {player['expected_minutes']}, "
-            f"performance {player['expected_performance']}, flags {flags}"
+            f"points {player['expected_points']}, performance {player['expected_performance']}, flags {flags}"
         )
 
     lines.extend(["", "BETTING OPPORTUNITIES"])
