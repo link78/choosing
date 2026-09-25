@@ -38,6 +38,25 @@ The repository still includes the underlying HTTP prediction utilities:
 python -m choosing.api
 ```
 
+The API server now honors deployment environment variables:
+
+- `HOST` defaults to `0.0.0.0`
+- `PORT` defaults to `8000`
+
+## Deploy online
+
+Container deployment:
+
+```bash
+docker build -t choosing /home/runner/work/choosing/choosing
+docker run -p 8000:8000 -e PORT=8000 choosing
+```
+
+Procfile-based deployment:
+
+- `/home/runner/work/choosing/choosing/Procfile` starts the web process with `python -m choosing.api`
+- platforms that inject `PORT` can run the app without code changes
+
 ## Test
 
 ```bash

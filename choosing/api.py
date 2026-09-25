@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from urllib.parse import parse_qs
 
 from .service import PredictionService
@@ -70,6 +71,31 @@ def _parse_overrides(query: dict[str, list[str]], fields: set[str], caster, labe
         except ValueError:
             errors[field] = f"{field} {label}"
     return parsed, errors
+
+
+def resolve_server_host() -> str:
+    return os.environ.get("HOST", "0.0.0.0")
+
+
+def resolve_server_port() -> int:
+    raw_port = os.environ.get("PORT", "8000")
+    try:
+        port = int(raw_port)
+    except ValueError as exc:
+        raise ValueError("PORT must be an integer") from exc
+    if not 1 <= port <= 65535:
+        raise ValueError("PORT must be between 1 and 65535")
+    return port
+
+
+def run_server() -> None:
+    from wsgiref.simple_server import make_server
+
+    host = resolve_server_host()
+    port = resolve_server_port()
+    with make_server(host, port, app) as server:
+        print(f"Serving on http://{host}:{port}")
+        server.serve_forever()
 
 
 def app(environ, start_response):
@@ -186,8 +212,4 @@ def app(environ, start_response):
 
 
 if __name__ == "__main__":
-    from wsgiref.simple_server import make_server
-
-    with make_server("127.0.0.1", 8000, app) as server:
-        print("Serving on http://127.0.0.1:8000")
-        server.serve_forever()
+    run_server()
