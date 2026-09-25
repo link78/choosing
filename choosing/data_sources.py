@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import json
+import os
 import re
+from statistics import mean, pstdev
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from .prediction import clamp, stable_float
 
@@ -47,6 +53,43 @@ def _titleize(value: str) -> str:
     return " ".join(part.capitalize() for part in value.split())
 
 
+def _safe_float(value, default: float | None = None) -> float | None:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value, default: int | None = None) -> int | None:
+    try:
+        if value is None or value == "":
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _status_to_risk(status: str | None) -> float | None:
+    if not status:
+        return None
+    normalized = _normalize(status)
+    if any(token in normalized for token in {"out", "suspended", "inactive"}):
+        return 0.9
+    if any(token in normalized for token in {"doubtful", "questionable"}):
+        return 0.65
+    if any(token in normalized for token in {"probable", "day to day"}):
+        return 0.35
+    return 0.15
+
+
+def _http_get_json(url: str, headers: dict[str, str] | None = None, timeout: float = 5.0):
+    request = Request(url, headers=headers or {})
+    with urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def search_players(query: str = "", team: str | None = None) -> list[dict]:
     normalized_query = _normalize(query)
     normalized_team = _normalize(team or "")
@@ -83,10 +126,28 @@ def search_teams(query: str = "") -> list[dict]:
 class SportsDataIOClient:
     source_name = "SportsDataIO"
 
+    def __init__(self, fetcher=None) -> None:
+        self.fetcher = fetcher or _http_get_json
+
+    @property
+    def api_key(self) -> str:
+        return os.environ.get("SPORTSDATAIO_API_KEY", "").strip()
+
+    @property
+    def base_url(self) -> str:
+        return os.environ.get("SPORTSDATAIO_BASE_URL", "https://api.sportsdata.io/v3/nba").rstrip("/")
+
+    @property
+    def season(self) -> str:
+        return os.environ.get("SPORTSDATAIO_SEASON", "2024")
+
+    def source_status(self) -> dict:
+        return {"configured": bool(self.api_key), "mode": "live" if self.api_key else "fallback"}
+
     def fetch_player_context(self, player_id: str, overrides: dict | None = None) -> dict:
         overrides = overrides or {}
         player = self.resolve_player(player_id, overrides.get("team"))
-        return {
+        payload = {
             "player_id": player["id"],
             "player_name": player["name"],
             "team": player["team"],
@@ -108,6 +169,13 @@ class SportsDataIOClient:
             ),
             "media_sentiment": overrides.get("media_sentiment", stable_float(f"{player['id']}:media", 0.3, 0.8)),
         }
+        live_payload = self._fetch_live_player_context(player)
+        if live_payload:
+            payload.update({key: value for key, value in live_payload.items() if value is not None})
+            payload["source_mode"] = "live"
+        else:
+            payload["source_mode"] = "fallback"
+        return payload
 
     def fetch_game_context(self, game_id: str, overrides: dict | None = None) -> dict:
         overrides = overrides or {}
@@ -127,9 +195,19 @@ class SportsDataIOClient:
         }
         if "model_probability" in overrides:
             payload["model_probability"] = overrides["model_probability"]
+        live_payload = self._fetch_live_team_context(game)
+        if live_payload:
+            payload.update({key: value for key, value in live_payload.items() if value is not None})
+            payload["source_mode"] = "live"
+        else:
+            payload["source_mode"] = "fallback"
         return payload
 
     def resolve_player(self, player_reference: str, team: str | None = None) -> dict:
+        if self.api_key:
+            live_match = self._resolve_live_player(player_reference, team)
+            if live_match:
+                return live_match
         matches = search_players(player_reference, team)
         if matches:
             return matches[0]
@@ -140,15 +218,178 @@ class SportsDataIOClient:
         }
 
     def resolve_team(self, team_reference: str) -> dict:
+        if self.api_key:
+            live_match = self._resolve_live_team(team_reference)
+            if live_match:
+                return live_match
         matches = search_teams(team_reference)
         if matches:
             return matches[0]
         title = _titleize(team_reference)
         return {"game_id": _slugify(team_reference), "team": title, "opponent": "Market Average"}
 
+    def _request(self, path: str, params: dict | None = None):
+        if not self.api_key:
+            return None
+        query = dict(params or {})
+        query["key"] = self.api_key
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        if query:
+            url = f"{url}?{urlencode(query)}"
+        try:
+            return self.fetcher(url, headers={"Accept": "application/json"})
+        except (HTTPError, URLError, TimeoutError, ValueError, OSError):
+            return None
+
+    def _resolve_live_player(self, player_reference: str, team: str | None = None) -> dict | None:
+        normalized_query = _normalize(player_reference)
+        normalized_team = _normalize(team or "")
+        for path in ("scores/json/Players", "scores/json/PlayersBasic"):
+            players = self._request(path)
+            if not isinstance(players, list):
+                continue
+            for entry in players:
+                name = entry.get("Name") or " ".join(
+                    part for part in [entry.get("FirstName"), entry.get("LastName")] if part
+                )
+                team_name = entry.get("Team") or entry.get("TeamName") or entry.get("TeamKey") or ""
+                searchable = [_normalize(str(entry.get("PlayerID", ""))), _normalize(name), _normalize(team_name)]
+                if normalized_query and not any(normalized_query in candidate for candidate in searchable):
+                    continue
+                if normalized_team and normalized_team not in _normalize(team_name):
+                    continue
+                return {
+                    "id": str(entry.get("PlayerID") or _slugify(name)),
+                    "name": name or _titleize(player_reference),
+                    "team": team_name or (_titleize(team) if team else "Open Market"),
+                }
+        return None
+
+    def _resolve_live_team(self, team_reference: str) -> dict | None:
+        normalized_query = _normalize(team_reference)
+        for path in (f"stats/json/TeamSeasonStats/{self.season}", f"scores/json/Standings/{self.season}"):
+            teams = self._request(path)
+            if not isinstance(teams, list):
+                continue
+            for entry in teams:
+                name = entry.get("Name") or entry.get("City") or entry.get("Team") or entry.get("Key") or ""
+                key = entry.get("Key") or entry.get("Team") or entry.get("Name") or name
+                if normalized_query and normalized_query not in _normalize(f"{name} {key}"):
+                    continue
+                return {
+                    "game_id": _slugify(name or key),
+                    "team": name or _titleize(team_reference),
+                    "opponent": "Market Average",
+                    "team_key": entry.get("Key") or entry.get("Team"),
+                }
+        return None
+
+    def _fetch_live_player_context(self, player: dict) -> dict | None:
+        player_id = player.get("id")
+        if not self.api_key or not player_id:
+            return None
+
+        season_stats = self._request(f"stats/json/PlayerSeasonStatsByPlayer/{self.season}/{player_id}")
+        recent_games = self._request(f"stats/json/PlayerGameStatsByPlayerID/{player_id}/5")
+        injuries = self._request("scores/json/Injuries")
+
+        if not isinstance(recent_games, list) and not isinstance(season_stats, dict):
+            return None
+
+        recent_games = recent_games if isinstance(recent_games, list) else []
+        season_stats = season_stats if isinstance(season_stats, dict) else {}
+        points = [_safe_float(game.get("Points")) for game in recent_games]
+        points = [value for value in points if value is not None]
+        minutes = [_safe_float(game.get("Minutes")) for game in recent_games]
+        minutes = [value for value in minutes if value is not None]
+        fouls = [_safe_float(game.get("PersonalFouls")) for game in recent_games]
+        fouls = [value for value in fouls if value is not None]
+
+        season_points = _safe_float(season_stats.get("Points"), 0.0)
+        season_games = _safe_float(season_stats.get("Games"), max(len(recent_games), 1)) or 1
+        baseline_points = season_points / max(season_games, 1)
+        recent_points = mean(points) if points else baseline_points
+        recent_form = clamp(0.5 + ((recent_points - baseline_points) / max(baseline_points, 8)) * 0.3, 0.05, 0.99)
+
+        workload = clamp((mean(minutes) if minutes else _safe_float(season_stats.get("Minutes"), 30.0)) / 40, 0.05, 0.99)
+        consistency = clamp(
+            1 - ((pstdev(points) if len(points) > 1 else baseline_points * 0.1) / max(recent_points or baseline_points or 1, 1)),
+            0.05,
+            0.99,
+        )
+        injury_status = None
+        if isinstance(injuries, list):
+            for injury in injuries:
+                if str(injury.get("PlayerID")) == str(player_id):
+                    injury_status = injury.get("Status") or injury.get("InjuryStatus")
+                    break
+        injury_risk = _status_to_risk(injury_status)
+        if injury_risk is None:
+            injury_risk = clamp((1 - consistency) * 0.45 + workload * 0.2, 0.05, 0.8)
+        return {
+            "recent_form": recent_form,
+            "workload": workload,
+            "injury_risk": injury_risk,
+            "consistency": consistency,
+            "availability": clamp(1 - injury_risk * 0.8, 0.05, 0.99),
+            "fouls_cards": clamp((mean(fouls) if fouls else 2.0) / 6, 0, 0.99),
+        }
+
+    def _fetch_live_team_context(self, game: dict) -> dict | None:
+        if not self.api_key:
+            return None
+        team_stats = self._request(f"stats/json/TeamSeasonStats/{self.season}")
+        if not isinstance(team_stats, list):
+            return None
+        match = None
+        normalized_team = _normalize(game["team"])
+        for entry in team_stats:
+            name = entry.get("Name") or entry.get("City") or entry.get("Team") or entry.get("Key") or ""
+            key = entry.get("Key") or entry.get("Team") or ""
+            if normalized_team in _normalize(f"{name} {key}"):
+                match = entry
+                break
+        if not match:
+            return None
+        pace = _safe_float(match.get("Possessions"), 98.0) / 120
+        points_per_game = _safe_float(match.get("PointsPerGame"), 108.0)
+        offensive_rating = _safe_float(match.get("OffensiveRating"), points_per_game)
+        defensive_rating = _safe_float(match.get("DefensiveRating"), 108.0)
+        win_pct = _safe_float(match.get("Percentage"), 0.5)
+        if win_pct is None:
+            wins = _safe_float(match.get("Wins"), 0.0) or 0.0
+            losses = _safe_float(match.get("Losses"), 0.0) or 0.0
+            total = max(wins + losses, 1)
+            win_pct = wins / total
+        return {
+            "team_form": clamp(win_pct, 0.05, 0.99),
+            "pace": clamp(pace, 0.05, 0.99),
+            "efficiency": clamp((offensive_rating or 108.0) / max((offensive_rating or 108.0) + (defensive_rating or 108.0), 1), 0.05, 0.99),
+            "injury_impact": clamp(max((defensive_rating or 108.0) - (offensive_rating or 108.0), 0) / 40, 0.02, 0.8),
+            "expected_points_adjustment": clamp(((points_per_game or 108.0) - 108) / 2, -8, 8),
+        }
+
 
 class OddsAPIClient:
     source_name = "The Odds API"
+
+    def __init__(self, fetcher=None) -> None:
+        self.fetcher = fetcher or _http_get_json
+
+    @property
+    def api_key(self) -> str:
+        return os.environ.get("ODDS_API_KEY", "").strip()
+
+    @property
+    def base_url(self) -> str:
+        return os.environ.get("ODDS_API_BASE_URL", "https://api.the-odds-api.com/v4").rstrip("/")
+
+    @property
+    def sport(self) -> str:
+        return os.environ.get("ODDS_API_SPORT", "basketball_nba")
+
+    def source_status(self) -> dict:
+        return {"configured": bool(self.api_key), "mode": "live" if self.api_key else "fallback"}
 
     def fetch_game_market(self, game_id: str, overrides: dict | None = None) -> dict:
         overrides = overrides or {}
@@ -158,7 +399,7 @@ class OddsAPIClient:
         line_movement = overrides.get("line_movement")
         if line_movement is None:
             line_movement = round(current_odds - opening_odds, 3)
-        return {
+        payload = {
             "game_id": game["game_id"],
             "team": game["team"],
             "opponent": game["opponent"],
@@ -179,3 +420,74 @@ class OddsAPIClient:
                 clamp(stable_float(f"{game['game_id']}:clv", -0.08, 0.08), -0.15, 0.15),
             ),
         }
+        live_payload = self._fetch_live_market(game)
+        if live_payload:
+            payload.update({key: value for key, value in live_payload.items() if value is not None})
+            payload["source_mode"] = "live"
+        else:
+            payload["source_mode"] = "fallback"
+        return payload
+
+    def _request(self, path: str, params: dict | None = None):
+        if not self.api_key:
+            return None
+        query = {
+            "apiKey": self.api_key,
+            "regions": os.environ.get("ODDS_API_REGIONS", "us"),
+            "markets": os.environ.get("ODDS_API_MARKETS", "h2h"),
+            "oddsFormat": os.environ.get("ODDS_API_ODDS_FORMAT", "american"),
+        }
+        query.update(params or {})
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        url = f"{url}?{urlencode(query)}"
+        try:
+            return self.fetcher(url, headers={"Accept": "application/json"})
+        except (HTTPError, URLError, TimeoutError, ValueError, OSError):
+            return None
+
+    def _fetch_live_market(self, game: dict) -> dict | None:
+        odds_payload = self._request(f"sports/{self.sport}/odds")
+        if not isinstance(odds_payload, list):
+            return None
+        normalized_team = _normalize(game["team"])
+        for event in odds_payload:
+            home = event.get("home_team") or ""
+            away = event.get("away_team") or ""
+            if normalized_team not in _normalize(f"{home} {away}"):
+                continue
+            prices = []
+            for bookmaker in event.get("bookmakers", []):
+                for market in bookmaker.get("markets", []):
+                    if market.get("key") != "h2h":
+                        continue
+                    for outcome in market.get("outcomes", []):
+                        if normalized_team not in _normalize(outcome.get("name", "")):
+                            continue
+                        price = _safe_int(outcome.get("price"))
+                        if price:
+                            prices.append(price)
+            if not prices:
+                return None
+            implied_probabilities = []
+            for price in prices:
+                if price > 0:
+                    implied_probabilities.append(100 / (price + 100))
+                else:
+                    implied_probabilities.append(abs(price) / (abs(price) + 100))
+            current_odds = prices[0]
+            consensus_probability = clamp(mean(implied_probabilities), 0.02, 0.98)
+            sharp_money_index = clamp(0.5 + (consensus_probability - 0.5) * 1.2, 0.05, 0.99)
+            return {
+                "game_id": _slugify(f"{home}-vs-{away}"),
+                "team": home if normalized_team in _normalize(home) else away,
+                "opponent": away if normalized_team in _normalize(home) else home,
+                "opening_odds": current_odds,
+                "current_odds": current_odds,
+                "market_consensus": consensus_probability,
+                "line_movement": 0,
+                "sharp_money_index": sharp_money_index,
+                "steam_move": len(set(prices)) > 1,
+                "closing_line_value": 0.0,
+                "implied_probability": consensus_probability,
+            }
+        return None

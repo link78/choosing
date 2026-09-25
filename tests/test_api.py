@@ -1,6 +1,8 @@
 import json
+import os
 import unittest
 from io import BytesIO
+from unittest.mock import patch
 
 from choosing.api import app
 
@@ -47,6 +49,14 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(response["body"]["data_sources"], ["SportsDataIO", "The Odds API"])
         self.assertEqual(response["body"]["endpoints"]["game_edge"], "/game/{id}/edge")
+
+    def test_health_endpoint_reports_source_modes(self):
+        with patch.dict(os.environ, {}, clear=True):
+            response = request("/health")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["body"]["sources"]["sports_data_io"]["mode"], "fallback")
+        self.assertEqual(response["body"]["sources"]["odds_api"]["mode"], "fallback")
 
     def test_player_prediction_endpoint_returns_prediction_payload(self):
         response = request("/player/42/prediction")

@@ -31,6 +31,7 @@ class PredictionService:
         payload["team"] = sports_data["team"]
         payload["source_snapshots"] = {
             "sports_data_io": {
+                "mode": sports_data.get("source_mode", "fallback"),
                 "recent_form": round(sports_data["recent_form"], 3),
                 "workload": round(sports_data["workload"], 3),
                 "injury_risk": round(sports_data["injury_risk"], 3),
@@ -50,9 +51,11 @@ class PredictionService:
             payload["team_prediction"]["expected_points"] + sports_data["expected_points_adjustment"],
             1,
         )
+        payload["team_prediction"]["source_mode"] = sports_data.get("source_mode", "fallback")
         payload["market_signals"]["sharp_money_index"] = round(odds_data["sharp_money_index"], 3)
         payload["market_signals"]["steam_move"] = odds_data["steam_move"]
         payload["market_signals"]["closing_line_value"] = round(odds_data["closing_line_value"], 3)
+        payload["market_signals"]["source_mode"] = odds_data.get("source_mode", "fallback")
         payload["betting_edge"]["confidence"] = round(
             clamp(
                 0.45
@@ -71,6 +74,12 @@ class PredictionService:
 
     def search_teams(self, query: str = "") -> list[dict]:
         return search_teams(query)
+
+    def source_status(self) -> dict:
+        return {
+            "sports_data_io": self.sports_client.source_status(),
+            "odds_api": self.odds_client.source_status(),
+        }
 
 
 def _recommended_stake(edge: float) -> str:

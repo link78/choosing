@@ -143,7 +143,7 @@ def app(environ, start_response):
         return json_response(
             start_response,
             "200 OK",
-            {"status": "ok", "sources": {"sports_data_io": "configured", "odds_api": "configured"}},
+            {"status": "ok", "sources": service.source_status()},
         )
 
     if path.startswith("/player/") and path.endswith("/prediction"):

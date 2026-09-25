@@ -42,6 +42,26 @@ The repository still includes the underlying HTTP prediction utilities:
 - `GET /app.json` for machine-readable app metadata
 - `GET /health`
 
+## Live API configuration
+
+Set these environment variables to fetch live upstream data before prediction and edge computation:
+
+- `SPORTSDATAIO_API_KEY`
+- `ODDS_API_KEY`
+
+Optional live-data configuration:
+
+- `SPORTSDATAIO_BASE_URL` (defaults to `https://api.sportsdata.io/v3/nba`)
+- `SPORTSDATAIO_SEASON` (defaults to `2024`)
+- `ODDS_API_BASE_URL` (defaults to `https://api.the-odds-api.com/v4`)
+- `ODDS_API_SPORT` (defaults to `basketball_nba`)
+
+Behavior:
+
+- when keys are configured, the app attempts live SportsDataIO and Odds API requests first
+- if a live request fails or returns unusable data, the app safely falls back to the existing deterministic local model inputs
+- `/health` reports whether each upstream source is running in `live` or `fallback` mode
+
 ## Run
 
 ```bash
