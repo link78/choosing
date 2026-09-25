@@ -35,13 +35,15 @@ class BettingApplicationTests(unittest.TestCase):
         application = BettingApplication()
 
         report = application.build_report(
-            player_ids=["Jayson Tatum"],
-            game_ids=["Boston Celtics"],
+            player_ids=["Stephen Curry"],
+            game_ids=["Golden State Warriors"],
         )
 
-        self.assertEqual(report["player_cards"][0]["player_id"], "42")
-        self.assertEqual(report["game_cards"][0]["game_id"], "finals")
-        self.assertEqual(report["portfolio_summary"]["highest_edge_game"], "finals")
+        self.assertEqual(report["player_cards"][0]["player_id"], "30")
+        self.assertEqual(report["player_cards"][0]["player_name"], "Stephen Curry")
+        self.assertIn(report["player_cards"][0]["scoring_outlook"], {"Likely to score", "Not likely to score"})
+        self.assertEqual(report["game_cards"][0]["game_id"], "warriors-lakers")
+        self.assertEqual(report["portfolio_summary"]["highest_edge_game"], "warriors-lakers")
 
     def test_render_text_report_contains_sections(self):
         application = BettingApplication()
@@ -52,6 +54,7 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertIn("CHOOSING SPORTS BETTING REPORT", rendered)
         self.assertIn("PLAYER WATCHLIST", rendered)
         self.assertIn("points", rendered)
+        self.assertRegex(rendered, r"likely to score|not likely to score")
         self.assertIn("BETTING OPPORTUNITIES", rendered)
         self.assertIn("PORTFOLIO SUMMARY", rendered)
 

@@ -66,6 +66,11 @@ def build_player_prediction(player_id: str, sports_data: dict | None = None) -> 
         1,
     )
     availability_probability = clamp((1 - injury_risk) * 0.75 + availability * 0.25, 0, 1)
+    likely_to_score = (
+        expected_points >= 20
+        and availability_probability >= 0.6
+        and underperformance_risk <= 0.55
+    )
 
     return {
         "player_id": player_id,
@@ -90,6 +95,8 @@ def build_player_prediction(player_id: str, sports_data: dict | None = None) -> 
             "expected_performance": round(expected_performance, 1),
             "underperformance_risk": round(underperformance_risk, 3),
             "availability_probability": round(availability_probability, 3),
+            "likely_to_score": likely_to_score,
+            "scoring_outlook": "Likely to score" if likely_to_score else "Not likely to score",
         },
     }
 

@@ -10,7 +10,7 @@ from choosing.service import PredictionService
 def fake_sports_fetcher(url: str, headers=None, timeout=5.0):
     if "scores/json/Players" in url:
         return [
-            {"PlayerID": 42, "Name": "Jayson Tatum", "Team": "Boston Celtics"},
+            {"PlayerID": 30, "Name": "Stephen Curry", "Team": "Golden State Warriors"},
             {"PlayerID": 15, "Name": "Nikola Jokic", "Team": "Denver Nuggets"},
         ]
     if "PlayerSeasonStatsByPlayer" in url:
@@ -26,8 +26,8 @@ def fake_sports_fetcher(url: str, headers=None, timeout=5.0):
     if "TeamSeasonStats" in url:
         return [
             {
-                "Name": "Boston Celtics",
-                "Key": "BOS",
+                "Name": "Golden State Warriors",
+                "Key": "GSW",
                 "Possessions": 101,
                 "PointsPerGame": 118,
                 "OffensiveRating": 119,
@@ -42,16 +42,16 @@ def fake_odds_fetcher(url: str, headers=None, timeout=5.0):
     if "sports/basketball_nba/odds" in url:
         return [
             {
-                "home_team": "Boston Celtics",
-                "away_team": "Dallas Mavericks",
+                "home_team": "Golden State Warriors",
+                "away_team": "Los Angeles Lakers",
                 "bookmakers": [
                     {
                         "markets": [
                             {
                                 "key": "h2h",
                                 "outcomes": [
-                                    {"name": "Boston Celtics", "price": -115},
-                                    {"name": "Dallas Mavericks", "price": 105},
+                                    {"name": "Golden State Warriors", "price": -115},
+                                    {"name": "Los Angeles Lakers", "price": 105},
                                 ],
                             }
                         ]
@@ -66,10 +66,10 @@ class LiveDataSourceTests(unittest.TestCase):
     def test_sportsdataio_client_uses_live_data_when_configured(self):
         with patch.dict(os.environ, {"SPORTSDATAIO_API_KEY": "test-key"}, clear=False):
             client = SportsDataIOClient(fetcher=fake_sports_fetcher)
-            payload = client.fetch_player_context("Jayson Tatum", {"team": "Boston Celtics"})
+            payload = client.fetch_player_context("Stephen Curry", {"team": "Golden State Warriors"})
 
-        self.assertEqual(payload["player_id"], "42")
-        self.assertEqual(payload["player_name"], "Jayson Tatum")
+        self.assertEqual(payload["player_id"], "30")
+        self.assertEqual(payload["player_name"], "Stephen Curry")
         self.assertEqual(payload["source_mode"], "live")
         self.assertGreater(payload["recent_form"], 0)
         self.assertLess(payload["injury_risk"], 0.5)
@@ -77,10 +77,10 @@ class LiveDataSourceTests(unittest.TestCase):
     def test_odds_api_client_uses_live_market_when_configured(self):
         with patch.dict(os.environ, {"ODDS_API_KEY": "test-key"}, clear=False):
             client = OddsAPIClient(fetcher=fake_odds_fetcher)
-            payload = client.fetch_game_market("Boston Celtics")
+            payload = client.fetch_game_market("Golden State Warriors")
 
-        self.assertEqual(payload["team"], "Boston Celtics")
-        self.assertEqual(payload["opponent"], "Dallas Mavericks")
+        self.assertEqual(payload["team"], "Golden State Warriors")
+        self.assertEqual(payload["opponent"], "Los Angeles Lakers")
         self.assertEqual(payload["source_mode"], "live")
         self.assertEqual(payload["current_odds"], -115)
         self.assertIn("implied_probability", payload)

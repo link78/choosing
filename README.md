@@ -14,7 +14,7 @@ python -m choosing.api
 Run the application:
 
 ```bash
-python -m choosing --players "Jayson Tatum,Nikola Jokic" --games "Boston Celtics,Denver Nuggets" --bankroll 1000
+python -m choosing --players "Stephen Curry,Nikola Jokic" --games "Golden State Warriors,Denver Nuggets" --bankroll 1000
 ```
 
 Print the report as JSON:

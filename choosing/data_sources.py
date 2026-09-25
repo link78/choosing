@@ -12,7 +12,7 @@ from .prediction import clamp, stable_float
 
 
 PLAYER_DIRECTORY = [
-    {"id": "42", "name": "Jayson Tatum", "team": "Boston Celtics", "aliases": ["tatum", "jayson"]},
+    {"id": "42", "name": "Luka Doncic", "team": "Dallas Mavericks", "aliases": ["luka", "doncic"]},
     {"id": "7", "name": "Kevin Durant", "team": "Phoenix Suns", "aliases": ["durant", "kd"]},
     {"id": "15", "name": "Nikola Jokic", "team": "Denver Nuggets", "aliases": ["jokic", "nikola"]},
     {"id": "30", "name": "Stephen Curry", "team": "Golden State Warriors", "aliases": ["curry", "steph"]},
@@ -20,13 +20,13 @@ PLAYER_DIRECTORY = [
 
 TEAM_DIRECTORY = [
     {
-        "game_id": "finals",
-        "team": "Boston Celtics",
+        "game_id": "suns-mavericks",
+        "team": "Phoenix Suns",
         "opponent": "Dallas Mavericks",
-        "aliases": ["boston", "celtics"],
+        "aliases": ["phoenix", "suns"],
     },
     {
-        "game_id": "demo",
+        "game_id": "nuggets-suns",
         "team": "Denver Nuggets",
         "opponent": "Phoenix Suns",
         "aliases": ["denver", "nuggets"],
