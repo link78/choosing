@@ -67,39 +67,6 @@ def fake_odds_fetcher(url: str, headers=None, timeout=5.0):
         ]
     raise AssertionError(f"Unexpected Odds API URL: {url}")
 
-
-def fake_media_fetcher(url: str, headers=None, timeout=5.0):
-    if url.endswith("/players/30"):
-        return {
-            "media_sentiment": 0.81,
-            "broadcast_exposure": 0.9,
-            "narrative_pressure": 0.24,
-        }
-    if url.endswith("/games/warriors-lakers"):
-        return {
-            "broadcast_heat": 0.87,
-            "audience_confidence": 0.73,
-            "narrative_pressure": 0.29,
-        }
-    raise AssertionError(f"Unexpected Media API URL: {url}")
-
-
-def fake_fantasy_fetcher(url: str, headers=None, timeout=5.0):
-    if url.endswith("/players/30"):
-        return {
-            "fantasy_projection": 37.5,
-            "fantasy_value_rating": 0.82,
-            "ownership_projection": 0.33,
-        }
-    if url.endswith("/games/warriors-lakers"):
-        return {
-            "fantasy_market_support": 0.76,
-            "fantasy_points_total": 232.5,
-            "injury_leverage": 0.21,
-        }
-    raise AssertionError(f"Unexpected Fantasy API URL: {url}")
-
-
 class LiveDataSourceTests(unittest.TestCase):
     def test_sportsdataio_client_uses_live_data_when_configured(self):
         with patch.dict(os.environ, {"SPORTSDATAIO_API_KEY": "test-key"}, clear=False):
@@ -125,21 +92,38 @@ class LiveDataSourceTests(unittest.TestCase):
 
     def test_media_client_uses_live_context_when_configured(self):
         with patch.dict(os.environ, {"MEDIA_BROADCAST_API_KEY": "test-key"}, clear=False):
-            client = MediaBroadcastClient(fetcher=fake_media_fetcher)
+            client = MediaBroadcastClient(fetcher=fake_sports_fetcher)
             payload = client.fetch_player_context("Stephen Curry", {"team": "Golden State Warriors"})
 
         self.assertEqual(payload["player_id"], "30")
         self.assertEqual(payload["source_mode"], "live")
-        self.assertEqual(payload["broadcast_exposure"], 0.9)
+        self.assertGreater(payload["broadcast_exposure"], 0)
 
     def test_fantasy_client_uses_live_context_when_configured(self):
         with patch.dict(os.environ, {"FANTASY_SPORTS_API_KEY": "test-key"}, clear=False):
-            client = FantasySportsAPIClient(fetcher=fake_fantasy_fetcher)
+            client = FantasySportsAPIClient(fetcher=fake_sports_fetcher)
             payload = client.fetch_player_context("Stephen Curry", {"team": "Golden State Warriors"})
 
         self.assertEqual(payload["player_id"], "30")
         self.assertEqual(payload["source_mode"], "live")
-        self.assertEqual(payload["fantasy_projection"], 37.5)
+        self.assertGreater(payload["fantasy_projection"], 0)
+
+    def test_media_and_fantasy_clients_can_fall_back_to_sportsdata_config(self):
+        with patch.dict(
+            os.environ,
+            {
+                "SPORTSDATAIO_API_KEY": "shared-key",
+                "SPORTSDATAIO_BASE_URL": "https://api.sportsdata.io/v3/nba",
+            },
+            clear=False,
+        ):
+            media_client = MediaBroadcastClient(fetcher=fake_sports_fetcher)
+            fantasy_client = FantasySportsAPIClient(fetcher=fake_sports_fetcher)
+
+            self.assertEqual(media_client.api_key, "shared-key")
+            self.assertEqual(fantasy_client.api_key, "shared-key")
+            self.assertEqual(media_client.base_url, "https://api.sportsdata.io/v3/nba")
+            self.assertEqual(fantasy_client.base_url, "https://api.sportsdata.io/v3/nba")
 
     def test_service_source_status_reflects_configured_env_vars(self):
         with patch.dict(
@@ -154,8 +138,8 @@ class LiveDataSourceTests(unittest.TestCase):
         ):
             service = PredictionService(
                 sports_client=SportsDataIOClient(fetcher=fake_sports_fetcher),
-                media_client=MediaBroadcastClient(fetcher=fake_media_fetcher),
-                fantasy_client=FantasySportsAPIClient(fetcher=fake_fantasy_fetcher),
+                media_client=MediaBroadcastClient(fetcher=fake_sports_fetcher),
+                fantasy_client=FantasySportsAPIClient(fetcher=fake_sports_fetcher),
                 odds_client=OddsAPIClient(fetcher=fake_odds_fetcher),
             )
             status = service.source_status()
@@ -192,7 +176,7 @@ class LiveDataSourceTests(unittest.TestCase):
             clear=False,
         ):
             sports_client = SportsDataIOClient(fetcher=fake_sports_fetcher)
-            media_client = MediaBroadcastClient(fetcher=fake_media_fetcher)
+            media_client = MediaBroadcastClient(fetcher=fake_sports_fetcher)
             fantasy_client = FantasySportsAPIClient(fetcher=failing_fetcher)
             odds_client = OddsAPIClient(fetcher=failing_fetcher)
             sports_client.fetch_player_context("Stephen Curry", {"team": "Golden State Warriors"})

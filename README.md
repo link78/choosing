@@ -60,18 +60,21 @@ Set these environment variables to fetch live upstream data before prediction an
 - `FANTASY_SPORTS_API_KEY`
 - `ODDS_API_KEY`
 
+`MEDIA_BROADCAST_API_KEY` and `FANTASY_SPORTS_API_KEY` can reuse the same SportsData key. If they are unset, the app falls back to `SPORTSDATAIO_API_KEY`.
+
 Optional live-data configuration:
 
 - `SPORTSDATAIO_BASE_URL` (defaults to `https://api.sportsdata.io/v3/nba`)
 - `SPORTSDATAIO_SEASON` (defaults to `2024`)
-- `MEDIA_BROADCAST_BASE_URL` (defaults to `https://media-broadcast.example.com`)
-- `FANTASY_SPORTS_BASE_URL` (defaults to `https://fantasy-sports.example.com`)
+- `MEDIA_BROADCAST_BASE_URL` (defaults to `SPORTSDATAIO_BASE_URL`)
+- `FANTASY_SPORTS_BASE_URL` (defaults to `SPORTSDATAIO_BASE_URL`)
 - `ODDS_API_BASE_URL` (defaults to `https://api.the-odds-api.com/v4`)
 - `ODDS_API_SPORT` (defaults to `basketball_nba`)
 
 Behavior:
 
 - when keys are configured, the app attempts live SportsDataIO, Media & Broadcast, Fantasy Sports API, and Odds API requests first
+- Media & Broadcast and Fantasy Sports API derive their live signals from the same SportsData-style upstream when pointed at the same base URL/key
 - if a live request fails or returns unusable data, the app safely falls back to the existing deterministic local model inputs
 - `/health` reports whether each upstream source is configured, whether its most recent upstream call succeeded, and the last error message when a provider fails
 

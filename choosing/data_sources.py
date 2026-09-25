@@ -555,11 +555,19 @@ class MediaBroadcastClient:
 
     @property
     def api_key(self) -> str:
-        return os.environ.get("MEDIA_BROADCAST_API_KEY", "").strip()
+        return os.environ.get("MEDIA_BROADCAST_API_KEY", "").strip() or os.environ.get(
+            "SPORTSDATAIO_API_KEY", ""
+        ).strip()
 
     @property
     def base_url(self) -> str:
-        return os.environ.get("MEDIA_BROADCAST_BASE_URL", "https://media-broadcast.example.com").rstrip("/")
+        return os.environ.get("MEDIA_BROADCAST_BASE_URL", "").strip().rstrip("/") or os.environ.get(
+            "SPORTSDATAIO_BASE_URL", "https://api.sportsdata.io/v3/nba"
+        ).rstrip("/")
+
+    @property
+    def season(self) -> str:
+        return os.environ.get("SPORTSDATAIO_SEASON", "2024")
 
     def source_status(self) -> dict:
         configured = bool(self.api_key)
@@ -627,7 +635,7 @@ class MediaBroadcastClient:
             return None
         url = f"{self.base_url}/{path.lstrip('/')}"
         try:
-            payload = self.fetcher(url, headers={"Accept": "application/json", "X-API-Key": self.api_key})
+            payload = self.fetcher(f"{url}?{urlencode({'key': self.api_key})}", headers={"Accept": "application/json"})
             self._last_call_succeeded = True
             self._last_error_message = None
             return payload
@@ -637,23 +645,52 @@ class MediaBroadcastClient:
             return None
 
     def _fetch_live_player_context(self, player: dict) -> dict | None:
-        payload = self._request(f"players/{player['id']}")
-        if not isinstance(payload, dict):
+        season_stats = self._request(f"stats/json/PlayerSeasonStatsByPlayer/{self.season}/{player['id']}")
+        recent_games = self._request(f"stats/json/PlayerGameStatsByPlayerID/{player['id']}/5")
+        if not isinstance(season_stats, dict) and not isinstance(recent_games, list):
             return None
+        season_stats = season_stats if isinstance(season_stats, dict) else {}
+        recent_games = recent_games if isinstance(recent_games, list) else []
+        points = [_safe_float(game.get("Points")) for game in recent_games]
+        points = [value for value in points if value is not None]
+        minutes = [_safe_float(game.get("Minutes")) for game in recent_games]
+        minutes = [value for value in minutes if value is not None]
+        baseline_points = (_safe_float(season_stats.get("Points"), 0.0) or 0.0) / max(
+            _safe_float(season_stats.get("Games"), max(len(recent_games), 1)) or 1,
+            1,
+        )
+        recent_points = mean(points) if points else baseline_points
+        recent_minutes = mean(minutes) if minutes else _safe_float(season_stats.get("Minutes"), 34.0) or 34.0
         return {
-            "media_sentiment": _safe_float(payload.get("media_sentiment")),
-            "broadcast_exposure": _safe_float(payload.get("broadcast_exposure")),
-            "narrative_pressure": _safe_float(payload.get("narrative_pressure")),
+            "media_sentiment": clamp(0.45 + recent_points / 50, 0.1, 0.99),
+            "broadcast_exposure": clamp(recent_minutes / 42, 0.1, 0.99),
+            "narrative_pressure": clamp(abs(recent_points - baseline_points) / max(baseline_points or 12, 12), 0.05, 0.9),
         }
 
     def _fetch_live_game_context(self, game: dict) -> dict | None:
-        payload = self._request(f"games/{game['game_id']}")
-        if not isinstance(payload, dict):
+        team_stats = self._request(f"stats/json/TeamSeasonStats/{self.season}")
+        if not isinstance(team_stats, list):
             return None
+        match = None
+        normalized_team = _normalize(game["team"])
+        for entry in team_stats:
+            name = entry.get("Name") or entry.get("City") or entry.get("Team") or entry.get("Key") or ""
+            key = entry.get("Key") or entry.get("Team") or ""
+            if normalized_team in _normalize(f"{name} {key}"):
+                match = entry
+                break
+        if not match:
+            return None
+        points_per_game = _safe_float(match.get("PointsPerGame"), 108.0) or 108.0
+        win_pct = _safe_float(match.get("Percentage"), 0.5)
+        if win_pct is None:
+            wins = _safe_float(match.get("Wins"), 0.0) or 0.0
+            losses = _safe_float(match.get("Losses"), 0.0) or 0.0
+            win_pct = wins / max(wins + losses, 1)
         return {
-            "broadcast_heat": _safe_float(payload.get("broadcast_heat")),
-            "audience_confidence": _safe_float(payload.get("audience_confidence")),
-            "narrative_pressure": _safe_float(payload.get("narrative_pressure")),
+            "broadcast_heat": clamp(points_per_game / 135, 0.1, 0.99),
+            "audience_confidence": clamp(win_pct, 0.05, 0.99),
+            "narrative_pressure": clamp(abs(points_per_game - 112) / 35, 0.05, 0.9),
         }
 
 
@@ -667,11 +704,19 @@ class FantasySportsAPIClient:
 
     @property
     def api_key(self) -> str:
-        return os.environ.get("FANTASY_SPORTS_API_KEY", "").strip()
+        return os.environ.get("FANTASY_SPORTS_API_KEY", "").strip() or os.environ.get(
+            "SPORTSDATAIO_API_KEY", ""
+        ).strip()
 
     @property
     def base_url(self) -> str:
-        return os.environ.get("FANTASY_SPORTS_BASE_URL", "https://fantasy-sports.example.com").rstrip("/")
+        return os.environ.get("FANTASY_SPORTS_BASE_URL", "").strip().rstrip("/") or os.environ.get(
+            "SPORTSDATAIO_BASE_URL", "https://api.sportsdata.io/v3/nba"
+        ).rstrip("/")
+
+    @property
+    def season(self) -> str:
+        return os.environ.get("SPORTSDATAIO_SEASON", "2024")
 
     def source_status(self) -> dict:
         configured = bool(self.api_key)
@@ -745,7 +790,7 @@ class FantasySportsAPIClient:
             return None
         url = f"{self.base_url}/{path.lstrip('/')}"
         try:
-            payload = self.fetcher(url, headers={"Accept": "application/json", "X-API-Key": self.api_key})
+            payload = self.fetcher(f"{url}?{urlencode({'key': self.api_key})}", headers={"Accept": "application/json"})
             self._last_call_succeeded = True
             self._last_error_message = None
             return payload
@@ -755,21 +800,44 @@ class FantasySportsAPIClient:
             return None
 
     def _fetch_live_player_context(self, player: dict) -> dict | None:
-        payload = self._request(f"players/{player['id']}")
-        if not isinstance(payload, dict):
+        season_stats = self._request(f"stats/json/PlayerSeasonStatsByPlayer/{self.season}/{player['id']}")
+        recent_games = self._request(f"stats/json/PlayerGameStatsByPlayerID/{player['id']}/5")
+        if not isinstance(season_stats, dict) and not isinstance(recent_games, list):
             return None
+        season_stats = season_stats if isinstance(season_stats, dict) else {}
+        recent_games = recent_games if isinstance(recent_games, list) else []
+        points = [_safe_float(game.get("Points")) for game in recent_games]
+        points = [value for value in points if value is not None]
+        minutes = [_safe_float(game.get("Minutes")) for game in recent_games]
+        minutes = [value for value in minutes if value is not None]
+        recent_points = mean(points) if points else _safe_float(season_stats.get("Points"), 20.0) or 20.0
+        recent_minutes = mean(minutes) if minutes else _safe_float(season_stats.get("Minutes"), 34.0) or 34.0
         return {
-            "fantasy_projection": _safe_float(payload.get("fantasy_projection")),
-            "fantasy_value_rating": _safe_float(payload.get("fantasy_value_rating")),
-            "ownership_projection": _safe_float(payload.get("ownership_projection")),
+            "fantasy_projection": round(recent_points * 1.2 + recent_minutes * 0.45, 1),
+            "fantasy_value_rating": clamp(recent_points / 35, 0.1, 0.99),
+            "ownership_projection": clamp(recent_minutes / 60, 0.05, 0.85),
         }
 
     def _fetch_live_game_context(self, game: dict) -> dict | None:
-        payload = self._request(f"games/{game['game_id']}")
-        if not isinstance(payload, dict):
+        team_stats = self._request(f"stats/json/TeamSeasonStats/{self.season}")
+        if not isinstance(team_stats, list):
             return None
+        match = None
+        normalized_team = _normalize(game["team"])
+        for entry in team_stats:
+            name = entry.get("Name") or entry.get("City") or entry.get("Team") or entry.get("Key") or ""
+            key = entry.get("Key") or entry.get("Team") or ""
+            if normalized_team in _normalize(f"{name} {key}"):
+                match = entry
+                break
+        if not match:
+            return None
+        points_per_game = _safe_float(match.get("PointsPerGame"), 108.0) or 108.0
+        possessions = _safe_float(match.get("Possessions"), 98.0) or 98.0
+        offensive_rating = _safe_float(match.get("OffensiveRating"), points_per_game) or points_per_game
+        defensive_rating = _safe_float(match.get("DefensiveRating"), 108.0) or 108.0
         return {
-            "fantasy_market_support": _safe_float(payload.get("fantasy_market_support")),
-            "fantasy_points_total": _safe_float(payload.get("fantasy_points_total")),
-            "injury_leverage": _safe_float(payload.get("injury_leverage")),
+            "fantasy_market_support": clamp(offensive_rating / 130, 0.1, 0.99),
+            "fantasy_points_total": round(points_per_game + possessions + 20, 1),
+            "injury_leverage": clamp(max(defensive_rating - offensive_rating, 0) / 40, 0.02, 0.85),
         }
