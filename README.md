@@ -57,6 +57,11 @@ Procfile-based deployment:
 - `/home/runner/work/choosing/choosing/Procfile` starts the web process with `python -m choosing.api`
 - platforms that inject `PORT` can run the app without code changes
 
+Railpack / Railway compatibility:
+
+- `/home/runner/work/choosing/choosing/start.sh` provides the startup script Railpack looks for
+- `/home/runner/work/choosing/choosing/requirements.txt` marks the repository as a Python app even though it uses only the standard library
+
 ## Test
 
 ```bash
