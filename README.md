@@ -62,7 +62,7 @@ Behavior:
 
 - when keys are configured, the app attempts live SportsDataIO and Odds API requests first
 - if a live request fails or returns unusable data, the app safely falls back to the existing deterministic local model inputs
-- `/health` reports whether each upstream source is running in `live` or `fallback` mode
+- `/health` reports whether each upstream source is configured, whether its most recent upstream call succeeded, and the last error message when a provider fails
 
 ## Run
 

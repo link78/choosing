@@ -1,5 +1,6 @@
 import os
 import unittest
+from urllib.error import URLError
 from unittest.mock import patch
 
 from choosing.api import app
@@ -101,6 +102,31 @@ class LiveDataSourceTests(unittest.TestCase):
         self.assertTrue(status["odds_api"]["configured"])
         self.assertEqual(status["sports_data_io"]["mode"], "live")
         self.assertEqual(status["odds_api"]["mode"], "live")
+        self.assertIsNone(status["sports_data_io"]["last_call_succeeded"])
+        self.assertIsNone(status["odds_api"]["last_call_succeeded"])
+        self.assertIsNone(status["sports_data_io"]["last_error_message"])
+        self.assertIsNone(status["odds_api"]["last_error_message"])
+
+    def test_source_status_tracks_last_upstream_success_and_error(self):
+        def failing_fetcher(url: str, headers=None, timeout=5.0):
+            raise URLError("provider unavailable")
+
+        with patch.dict(
+            os.environ,
+            {"SPORTSDATAIO_API_KEY": "sports-key", "ODDS_API_KEY": "odds-key"},
+            clear=False,
+        ):
+            sports_client = SportsDataIOClient(fetcher=fake_sports_fetcher)
+            odds_client = OddsAPIClient(fetcher=failing_fetcher)
+            sports_client.fetch_player_context("Stephen Curry", {"team": "Golden State Warriors"})
+            odds_client.fetch_game_market("Golden State Warriors")
+            sports_status = sports_client.source_status()
+            odds_status = odds_client.source_status()
+
+            self.assertTrue(sports_status["last_call_succeeded"])
+            self.assertIsNone(sports_status["last_error_message"])
+            self.assertFalse(odds_status["last_call_succeeded"])
+            self.assertIn("provider unavailable", odds_status["last_error_message"])
 
 
 if __name__ == "__main__":

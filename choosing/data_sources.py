@@ -138,6 +138,8 @@ class SportsDataIOClient:
 
     def __init__(self, fetcher=None) -> None:
         self.fetcher = fetcher or _http_get_json
+        self._last_call_succeeded = None
+        self._last_error_message = None
 
     @property
     def api_key(self) -> str:
@@ -152,7 +154,13 @@ class SportsDataIOClient:
         return os.environ.get("SPORTSDATAIO_SEASON", "2024")
 
     def source_status(self) -> dict:
-        return {"configured": bool(self.api_key), "mode": "live" if self.api_key else "fallback"}
+        configured = bool(self.api_key)
+        return {
+            "configured": configured,
+            "mode": "live" if configured else "fallback",
+            "last_call_succeeded": self._last_call_succeeded,
+            "last_error_message": self._last_error_message if configured else "API key not configured",
+        }
 
     def fetch_player_context(self, player_id: str, overrides: dict | None = None) -> dict:
         overrides = overrides or {}
@@ -242,6 +250,8 @@ class SportsDataIOClient:
 
     def _request(self, path: str, params: dict | None = None):
         if not self.api_key:
+            self._last_call_succeeded = None
+            self._last_error_message = "API key not configured"
             return None
         query = dict(params or {})
         query["key"] = self.api_key
@@ -249,8 +259,13 @@ class SportsDataIOClient:
         if query:
             url = f"{url}?{urlencode(query)}"
         try:
-            return self.fetcher(url, headers={"Accept": "application/json"})
-        except (HTTPError, URLError, TimeoutError, ValueError, OSError):
+            payload = self.fetcher(url, headers={"Accept": "application/json"})
+            self._last_call_succeeded = True
+            self._last_error_message = None
+            return payload
+        except (HTTPError, URLError, TimeoutError, ValueError, OSError) as exc:
+            self._last_call_succeeded = False
+            self._last_error_message = str(exc)
             return None
 
     def _resolve_live_player(self, player_reference: str, team: str | None = None) -> dict | None:
@@ -389,6 +404,8 @@ class OddsAPIClient:
 
     def __init__(self, fetcher=None) -> None:
         self.fetcher = fetcher or _http_get_json
+        self._last_call_succeeded = None
+        self._last_error_message = None
 
     @property
     def api_key(self) -> str:
@@ -403,7 +420,13 @@ class OddsAPIClient:
         return os.environ.get("ODDS_API_SPORT", "basketball_nba")
 
     def source_status(self) -> dict:
-        return {"configured": bool(self.api_key), "mode": "live" if self.api_key else "fallback"}
+        configured = bool(self.api_key)
+        return {
+            "configured": configured,
+            "mode": "live" if configured else "fallback",
+            "last_call_succeeded": self._last_call_succeeded,
+            "last_error_message": self._last_error_message if configured else "API key not configured",
+        }
 
     def fetch_game_market(self, game_id: str, overrides: dict | None = None) -> dict:
         overrides = overrides or {}
@@ -444,6 +467,8 @@ class OddsAPIClient:
 
     def _request(self, path: str, params: dict | None = None):
         if not self.api_key:
+            self._last_call_succeeded = None
+            self._last_error_message = "API key not configured"
             return None
         query = {
             "apiKey": self.api_key,
@@ -455,8 +480,13 @@ class OddsAPIClient:
         url = f"{self.base_url}/{path.lstrip('/')}"
         url = f"{url}?{urlencode(query)}"
         try:
-            return self.fetcher(url, headers={"Accept": "application/json"})
-        except (HTTPError, URLError, TimeoutError, ValueError, OSError):
+            payload = self.fetcher(url, headers={"Accept": "application/json"})
+            self._last_call_succeeded = True
+            self._last_error_message = None
+            return payload
+        except (HTTPError, URLError, TimeoutError, ValueError, OSError) as exc:
+            self._last_call_succeeded = False
+            self._last_error_message = str(exc)
             return None
 
     def _fetch_live_market(self, game: dict) -> dict | None:

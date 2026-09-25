@@ -4,7 +4,7 @@ import unittest
 from io import BytesIO
 from unittest.mock import patch
 
-from choosing.api import app
+from choosing.api import app, service
 
 
 def request(path: str):
@@ -57,11 +57,41 @@ class PredictionApiTests(unittest.TestCase):
 
     def test_health_endpoint_reports_source_modes(self):
         with patch.dict(os.environ, {}, clear=True):
+            service.sports_client._last_call_succeeded = None
+            service.sports_client._last_error_message = None
+            service.odds_client._last_call_succeeded = None
+            service.odds_client._last_error_message = None
             response = request("/health")
 
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(response["body"]["sources"]["sports_data_io"]["mode"], "fallback")
         self.assertEqual(response["body"]["sources"]["odds_api"]["mode"], "fallback")
+        self.assertFalse(response["body"]["sources"]["sports_data_io"]["configured"])
+        self.assertFalse(response["body"]["sources"]["odds_api"]["configured"])
+        self.assertIsNone(response["body"]["sources"]["sports_data_io"]["last_call_succeeded"])
+        self.assertEqual(
+            response["body"]["sources"]["sports_data_io"]["last_error_message"],
+            "API key not configured",
+        )
+
+    def test_health_endpoint_exposes_last_upstream_status(self):
+        with patch.dict(
+            os.environ,
+            {"SPORTSDATAIO_API_KEY": "sports-key", "ODDS_API_KEY": "odds-key"},
+            clear=True,
+        ):
+            service.sports_client._last_call_succeeded = True
+            service.sports_client._last_error_message = None
+            service.odds_client._last_call_succeeded = False
+            service.odds_client._last_error_message = "upstream timeout"
+            response = request("/health")
+
+        self.assertTrue(response["body"]["sources"]["sports_data_io"]["configured"])
+        self.assertTrue(response["body"]["sources"]["sports_data_io"]["last_call_succeeded"])
+        self.assertIsNone(response["body"]["sources"]["sports_data_io"]["last_error_message"])
+        self.assertTrue(response["body"]["sources"]["odds_api"]["configured"])
+        self.assertFalse(response["body"]["sources"]["odds_api"]["last_call_succeeded"])
+        self.assertEqual(response["body"]["sources"]["odds_api"]["last_error_message"], "upstream timeout")
 
     def test_player_prediction_endpoint_returns_prediction_payload(self):
         response = request("/player/42/prediction")
