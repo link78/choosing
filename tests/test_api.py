@@ -49,6 +49,9 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("Injury status", response["raw_body"])
         self.assertIn("Media &amp; Broadcast", response["raw_body"])
         self.assertIn("Fantasy Sports API", response["raw_body"])
+        self.assertIn("The Odds API endpoints", response["raw_body"])
+        self.assertIn("/sports/{sport}/odds", response["raw_body"])
+        self.assertIn("/historical/sports/{sport}/odds", response["raw_body"])
 
     def test_app_metadata_endpoint_returns_machine_readable_json(self):
         response = request("/app.json")
@@ -57,6 +60,11 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(
             response["body"]["data_sources"],
             ["SportsDataIO", "Media & Broadcast", "Fantasy Sports API", "The Odds API"],
+        )
+        self.assertEqual(response["body"]["upstream_endpoints"]["the_odds_api"][0]["path"], "/sports")
+        self.assertEqual(
+            response["body"]["upstream_endpoints"]["the_odds_api"][1]["path"],
+            "/sports/{sport}/odds",
         )
         self.assertEqual(response["body"]["endpoints"]["game_edge"], "/game/{id}/edge")
 

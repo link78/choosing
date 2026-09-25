@@ -51,6 +51,15 @@ The repository still includes the underlying HTTP prediction utilities:
 - `GET /app.json` for machine-readable app metadata
 - `GET /health`
 
+The home dashboard and `/app.json` also display the tracked The Odds API endpoint catalog:
+
+- `/sports`
+- `/sports/{sport}/odds`
+- `/sports/{sport}/events`
+- `/sports/{sport}/events/{eventId}/odds`
+- `/sports/{sport}/scores`
+- `/historical/sports/{sport}/odds`
+
 ## Live API configuration
 
 Set these environment variables to fetch live upstream data before prediction and edge computation:

@@ -5,11 +5,24 @@ import json
 from .data_sources import search_players, search_teams
 
 
+ODDS_API_ENDPOINTS = [
+    {"name": "Sports list", "path": "/sports"},
+    {"name": "Current odds", "path": "/sports/{sport}/odds"},
+    {"name": "Event list", "path": "/sports/{sport}/events"},
+    {"name": "Event odds", "path": "/sports/{sport}/events/{eventId}/odds"},
+    {"name": "Scores", "path": "/sports/{sport}/scores"},
+    {"name": "Historical odds", "path": "/historical/sports/{sport}/odds"},
+]
+
+
 def app_metadata() -> dict:
     return {
         "name": "choosing",
         "description": "Player-centric sports prediction system for smarter betting decisions.",
         "data_sources": ["SportsDataIO", "Media & Broadcast", "Fantasy Sports API", "The Odds API"],
+        "upstream_endpoints": {
+            "the_odds_api": ODDS_API_ENDPOINTS,
+        },
         "endpoints": {
             "health": "/health",
             "player_prediction": "/player/{id}/prediction",
@@ -25,6 +38,13 @@ def app_metadata() -> dict:
 def render_home_page() -> str:
     metadata = app_metadata()
     metadata_json = json.dumps(metadata, indent=2)
+    odds_endpoint_markup = "\n".join(
+        (
+            f'<div class="metric"><strong>{entry["name"]}</strong><br>'
+            f'<span class="muted">{entry["path"]}</span></div>'
+        )
+        for entry in metadata["upstream_endpoints"]["the_odds_api"]
+    )
     player_options = "\n".join(
         f'<option value="{player["name"]}">{player["team"]}</option>' for player in search_players()
     )
@@ -262,6 +282,12 @@ def render_home_page() -> str:
           <div class="metric"><strong>2.</strong><br>Read bookmaker movement and implied probability</div>
           <div class="metric"><strong>3.</strong><br>Estimate outcomes and risk</div>
           <div class="metric"><strong>4.</strong><br>Act only when the edge is positive</div>
+        </div>
+      </article>
+      <article class="card">
+        <h3>The Odds API endpoints</h3>
+        <div class="metric-grid">
+          {odds_endpoint_markup}
         </div>
       </article>
     </section>
