@@ -69,15 +69,8 @@ The displayed The Odds API sport coverage includes:
 - NFL
 - MLB
 - NBA
-- NHL
-- College Football
 - College Basketball
-- PGA / Golf
-- NASCAR
-- Soccer
-- UFC / MMA
 - Tennis
-- Olympics
 
 The dashboard also includes a "Top players by sport" section that ranks up to 10 players by predicted performance for the selected sport, surfaces a leading suggestion for each player, and lets you click a player to load the full player prediction view.
 

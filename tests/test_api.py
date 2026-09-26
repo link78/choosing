@@ -82,7 +82,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("/historical/sports/{sport}/odds", response["raw_body"])
         self.assertIn("The Odds API sports", response["raw_body"])
         self.assertIn("NFL", response["raw_body"])
-        self.assertIn("Olympics", response["raw_body"])
+        self.assertIn("Tennis", response["raw_body"])
+        self.assertNotIn("Olympics", response["raw_body"])
         self.assertIn("Sport", response["raw_body"])
         self.assertIn("Sport profile", response["raw_body"])
 
@@ -100,7 +101,7 @@ class PredictionApiTests(unittest.TestCase):
             "/sports/{sport}/odds",
         )
         self.assertEqual(response["body"]["upstream_sports"]["the_odds_api"][0]["name"], "NFL")
-        self.assertEqual(response["body"]["upstream_sports"]["the_odds_api"][-1]["name"], "Olympics")
+        self.assertEqual(response["body"]["upstream_sports"]["the_odds_api"][-1]["name"], "Tennis")
         self.assertEqual(response["body"]["endpoints"]["top_players"], "/players/top?sport={sport_key}&limit=10")
         self.assertEqual(response["body"]["endpoints"]["game_edge"], "/game/{id}/edge")
         self.assertEqual(response["body"]["endpoints"]["backtest_summary"], "/backtest/summary.json")
@@ -214,7 +215,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["odds_api_catalog"]["sports"][0]["name"], "NFL")
         self.assertEqual(response["body"]["predictions"]["odds_api_endpoints"][0]["path"], "/sports")
         self.assertEqual(response["body"]["player_profile"]["sport"]["league"], "NBA")
-        self.assertEqual(response["body"]["player_profile"]["odds_api_coverage"]["sports"][-1]["name"], "Olympics")
+        self.assertEqual(response["body"]["player_profile"]["odds_api_coverage"]["sports"][-1]["name"], "Tennis")
         self.assertEqual(
             response["body"]["player_profile"]["computation_data"]["odds_api_endpoints"][1]["path"],
             "/sports/{sport}/odds",
@@ -241,6 +242,17 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["sport"]["league"], "NFL")
         self.assertEqual(response["body"]["sport"]["odds_api_key"], "americanfootball_nfl")
         self.assertEqual(response["body"]["player_profile"]["sport"]["league"], "NFL")
+
+    def test_player_prediction_endpoint_supports_college_basketball_and_tennis(self):
+        college = request("/player/Cooper%20Flagg/prediction?sport=basketball_ncaab")
+        tennis = request("/player/Carlos%20Alcaraz/prediction?sport=tennis_*")
+
+        self.assertEqual(college["status"], "200 OK")
+        self.assertEqual(college["body"]["sport"]["league"], "NCAAB")
+        self.assertEqual(college["body"]["player_name"], "Cooper Flagg")
+        self.assertEqual(tennis["status"], "200 OK")
+        self.assertEqual(tennis["body"]["sport"]["league"], "Tennis")
+        self.assertEqual(tennis["body"]["player_name"], "Carlos Alcaraz")
 
     def test_player_prediction_endpoint_applies_overrides(self):
         response = request(
@@ -341,12 +353,15 @@ class PredictionApiTests(unittest.TestCase):
     def test_lookup_endpoints_return_player_and_team_matches(self):
         player_response = request("/lookup/players?query=curry")
         sport_filtered_player_response = request("/lookup/players?query=mahomes&sport=americanfootball_nfl")
+        college_response = request("/lookup/players?query=flagg&sport=basketball_ncaab")
         team_response = request("/lookup/teams?query=warriors")
 
         self.assertEqual(player_response["status"], "200 OK")
         self.assertEqual(player_response["body"]["players"][0]["name"], "Stephen Curry")
         self.assertEqual(sport_filtered_player_response["status"], "200 OK")
         self.assertEqual(sport_filtered_player_response["body"]["players"][0]["name"], "Patrick Mahomes")
+        self.assertEqual(college_response["status"], "200 OK")
+        self.assertEqual(college_response["body"]["players"][0]["name"], "Cooper Flagg")
         self.assertEqual(team_response["status"], "200 OK")
         self.assertEqual(team_response["body"]["teams"][0]["team"], "Golden State Warriors")
 

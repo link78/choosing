@@ -23,15 +23,8 @@ ODDS_API_SPORTS = [
     {"name": "NFL", "key": "americanfootball_nfl"},
     {"name": "MLB", "key": "baseball_mlb"},
     {"name": "NBA", "key": "basketball_nba"},
-    {"name": "NHL", "key": "icehockey_nhl"},
-    {"name": "College Football", "key": "americanfootball_ncaaf"},
     {"name": "College Basketball", "key": "basketball_ncaab"},
-    {"name": "PGA / Golf", "key": "golf_pga"},
-    {"name": "NASCAR", "key": "motorsports_nascar"},
-    {"name": "Soccer", "key": "soccer_*"},
-    {"name": "UFC / MMA", "key": "mma_mixed_martial_arts"},
     {"name": "Tennis", "key": "tennis_*"},
-    {"name": "Olympics", "key": "olympics_*"},
 ]
 
 
@@ -119,13 +112,21 @@ SPORT_MODEL_PROFILES = {
         "risk": {**DEFAULT_SPORT_MODEL["risk"], "consistency": 0.42, "workload": 0.14, "injury_risk": 0.16},
         "game": {**DEFAULT_SPORT_MODEL["game"], "pace": 0.01, "injury_impact": -0.05, "market_consensus": 0.07},
     },
-    "icehockey_nhl": {
+    "basketball_ncaab": {
         **DEFAULT_SPORT_MODEL,
-        "minutes": {**DEFAULT_SPORT_MODEL["minutes"], "base": 16.0, "broadcast_exposure": 1.5, "teammate_absences": 0.5},
-        "performance": {**DEFAULT_SPORT_MODEL["performance"], "effective_form": 15.0, "consistency": 11.0, "team_context": 5.0},
-        "points": {**DEFAULT_SPORT_MODEL["points"], "recent_form": 11.0, "lineup_support": 2.0},
-        "risk": {**DEFAULT_SPORT_MODEL["risk"], "workload": 0.2, "matchup_difficulty": 0.22},
-        "game": {**DEFAULT_SPORT_MODEL["game"], "pace": 0.03, "efficiency": 0.12},
+        "minutes": {**DEFAULT_SPORT_MODEL["minutes"], "base": 19.0, "recent_form": 11.0, "broadcast_exposure": 1.4},
+        "performance": {**DEFAULT_SPORT_MODEL["performance"], "effective_form": 17.0, "team_context": 5.2, "matchup_difficulty": -7.5},
+        "points": {**DEFAULT_SPORT_MODEL["points"], "recent_form": 12.0, "team_context": 4.5, "fantasy_projection_blend": 0.28},
+        "risk": {**DEFAULT_SPORT_MODEL["risk"], "workload": 0.22, "matchup_difficulty": 0.23, "injury_risk": 0.18},
+        "game": {**DEFAULT_SPORT_MODEL["game"], "pace": 0.04, "market_consensus": 0.06},
+    },
+    "tennis_*": {
+        **DEFAULT_SPORT_MODEL,
+        "minutes": {**DEFAULT_SPORT_MODEL["minutes"], "base": 12.0, "team_context": 2.0, "lineup_support": 1.2, "teammate_absences": 0.0},
+        "performance": {**DEFAULT_SPORT_MODEL["performance"], "effective_form": 19.0, "team_context": 2.5, "lineup_support": 1.5},
+        "points": {**DEFAULT_SPORT_MODEL["points"], "recent_form": 9.0, "team_context": 1.5, "lineup_support": 1.1, "fantasy_projection_blend": 0.22},
+        "risk": {**DEFAULT_SPORT_MODEL["risk"], "workload": 0.18, "matchup_difficulty": 0.28, "injury_risk": 0.22},
+        "game": {**DEFAULT_SPORT_MODEL["game"], "pace": 0.0, "fantasy_market_support": 0.02, "injury_impact": -0.06},
     },
 }
 
@@ -165,9 +166,12 @@ def _sport_profile(sport: dict) -> dict:
     elif name == "NBA":
         sport_name = "Basketball"
         league = "NBA"
-    elif name == "NHL":
-        sport_name = "Ice Hockey"
-        league = "NHL"
+    elif name == "College Basketball":
+        sport_name = "Basketball"
+        league = "NCAAB"
+    elif name == "Tennis":
+        sport_name = "Tennis"
+        league = "Tennis"
     else:
         sport_name = name
         league = name

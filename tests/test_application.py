@@ -90,6 +90,18 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertIn("BETTING OPPORTUNITIES", rendered)
         self.assertIn("PORTFOLIO SUMMARY", rendered)
 
+    def test_build_report_supports_college_basketball_player(self):
+        application = BettingApplication()
+
+        report = application.build_report(
+            player_ids=["Cooper Flagg"],
+            game_ids=[],
+            player_overrides={"Cooper Flagg": {"sport": "basketball_ncaab"}},
+        )
+
+        self.assertEqual(report["player_cards"][0]["player_name"], "Cooper Flagg")
+        self.assertEqual(report["player_cards"][0]["sport"]["league"], "NCAAB")
+
     def test_main_can_emit_json(self):
         output = StringIO()
 

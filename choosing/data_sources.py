@@ -25,6 +25,11 @@ PLAYER_DIRECTORY = [
     {"id": "101", "name": "Patrick Mahomes", "team": "Kansas City Chiefs", "sport_key": "americanfootball_nfl", "aliases": ["mahomes", "patrick"]},
     {"id": "102", "name": "Josh Allen", "team": "Buffalo Bills", "sport_key": "americanfootball_nfl", "aliases": ["allen", "josh"]},
     {"id": "103", "name": "Christian McCaffrey", "team": "San Francisco 49ers", "sport_key": "americanfootball_nfl", "aliases": ["mccaffrey", "christian"]},
+    {"id": "401", "name": "Cooper Flagg", "team": "Duke Blue Devils", "sport_key": "basketball_ncaab", "aliases": ["flagg", "cooper"]},
+    {"id": "402", "name": "Johni Broome", "team": "Auburn Tigers", "sport_key": "basketball_ncaab", "aliases": ["broome", "johni"]},
+    {"id": "403", "name": "Hunter Dickinson", "team": "Kansas Jayhawks", "sport_key": "basketball_ncaab", "aliases": ["dickinson", "hunter"]},
+    {"id": "404", "name": "Mark Sears", "team": "Alabama Crimson Tide", "sport_key": "basketball_ncaab", "aliases": ["sears", "mark"]},
+    {"id": "405", "name": "Alex Karaban", "team": "UConn Huskies", "sport_key": "basketball_ncaab", "aliases": ["karaban", "alex"]},
     {"id": "201", "name": "Shohei Ohtani", "team": "Los Angeles Dodgers", "sport_key": "baseball_mlb", "aliases": ["ohtani", "shohei"]},
     {"id": "202", "name": "Aaron Judge", "team": "New York Yankees", "sport_key": "baseball_mlb", "aliases": ["judge", "aaron"]},
     {"id": "203", "name": "Juan Soto", "team": "New York Yankees", "sport_key": "baseball_mlb", "aliases": ["soto", "juan"]},
@@ -35,7 +40,11 @@ PLAYER_DIRECTORY = [
     {"id": "208", "name": "Gunnar Henderson", "team": "Baltimore Orioles", "sport_key": "baseball_mlb", "aliases": ["gunnar", "henderson"]},
     {"id": "209", "name": "Corey Seager", "team": "Texas Rangers", "sport_key": "baseball_mlb", "aliases": ["seager", "corey"]},
     {"id": "210", "name": "Bryce Harper", "team": "Philadelphia Phillies", "sport_key": "baseball_mlb", "aliases": ["harper", "bryce"]},
-    {"id": "301", "name": "Connor McDavid", "team": "Edmonton Oilers", "sport_key": "icehockey_nhl", "aliases": ["mcdavid", "connor"]},
+    {"id": "501", "name": "Jannik Sinner", "team": "ATP Tour", "sport_key": "tennis_*", "aliases": ["sinner", "jannik"]},
+    {"id": "502", "name": "Carlos Alcaraz", "team": "ATP Tour", "sport_key": "tennis_*", "aliases": ["alcaraz", "carlos"]},
+    {"id": "503", "name": "Novak Djokovic", "team": "ATP Tour", "sport_key": "tennis_*", "aliases": ["djokovic", "novak"]},
+    {"id": "504", "name": "Iga Swiatek", "team": "WTA Tour", "sport_key": "tennis_*", "aliases": ["swiatek", "iga"]},
+    {"id": "505", "name": "Coco Gauff", "team": "WTA Tour", "sport_key": "tennis_*", "aliases": ["gauff", "coco"]},
 ]
 
 TEAM_DIRECTORY = [
