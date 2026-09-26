@@ -4,6 +4,7 @@ import html
 
 from .catalog import ODDS_API_ENDPOINTS, ODDS_API_SPORTS
 from .data_sources import search_players, search_teams
+from .mlb_props import reference_data as mlb_reference_data
 
 
 def app_metadata() -> dict:
@@ -21,6 +22,9 @@ def app_metadata() -> dict:
             "health": "/health",
             "player_prediction": "/player/{id}/prediction",
             "top_players": "/players/top?sport={sport_key}&limit=10",
+            "mlb_props": "/mlb/props?player={name}&pitcher={name}&park={park}&wind_out_mph=0&temperature_f=70",
+            "mlb_reference": "/mlb/reference",
+            "mlb_hr_leaders": "/mlb/hr-leaders?team={team}&limit=5&pitcher={name}&park={park}",
             "game_edge": "/game/{id}/edge",
             "backtest_summary": "/backtest/summary.json",
             "backtest_grade": "POST /backtest/grade?date=YYYY-MM-DD",
@@ -75,6 +79,21 @@ def render_home_page() -> str:
     )
     team_options = "\n".join(
         f'<option value="{team["team"]}">{team["opponent"]}</option>' for team in teams
+    )
+    mlb_reference = mlb_reference_data()
+    mlb_batter_options = "\n".join(
+        f'<option value="{html.escape(entry["name"])}">{html.escape(entry["team"])}</option>' for entry in mlb_reference["batters"]
+    )
+    mlb_pitcher_options = "\n".join(
+        f'<option value="{html.escape(entry["name"])}">{html.escape(entry["team"] or "Reference")}</option>'
+        for entry in mlb_reference["pitchers"]
+    )
+    mlb_park_options = '<option value="">Batter home park</option>\n' + "\n".join(
+        f'<option value="{html.escape(entry["name"])}">{html.escape(entry["name"])} (HR x{entry["hr_factor"]:.2f})</option>'
+        for entry in mlb_reference["parks"]
+    )
+    mlb_team_options = '<option value="">All teams</option>\n' + "\n".join(
+        f'<option value="{html.escape(team)}">{html.escape(team)}</option>' for team in mlb_reference["teams"]
     )
     extra_script = EXTRA_SCRIPT
     return f"""<!doctype html>
@@ -217,6 +236,7 @@ def render_home_page() -> str:
       color: #d7e7ff;
     }}
     .danger {{ color: var(--danger); }}
+    .success {{ color: var(--accent-2); }}
     .warning {{ color: #f2cc60; }}
     .banner {{
       margin-top: 14px;
@@ -381,6 +401,74 @@ def render_home_page() -> str:
           <button type="submit">Load top players</button>
         </form>
         <div id="top-players-result" class="result muted">Waiting for a sport summary.</div>
+      </article>
+
+      <article class="card">
+        <h2>MLB home run &amp; total bases</h2>
+        <p class="muted">Baseline power, recent form, pitcher matchup, park, weather, and pitch-type fit compared with market odds. Informational only, not betting advice.</p>
+        <form id="mlb-props-form">
+          <label>Batter
+            <input id="mlb-player" name="mlb-player" list="mlb-batter-options" value="" placeholder="e.g. Aaron Judge">
+            <datalist id="mlb-batter-options">{mlb_batter_options}</datalist>
+          </label>
+          <label>Opposing pitcher
+            <input id="mlb-pitcher" name="mlb-pitcher" list="mlb-pitcher-options" value="" placeholder="League Average Pitcher">
+            <datalist id="mlb-pitcher-options">{mlb_pitcher_options}</datalist>
+          </label>
+          <label>Ballpark
+            <select id="mlb-park" name="mlb-park">
+              {mlb_park_options}
+            </select>
+          </label>
+          <label>Wind out (mph, negative = in)
+            <input id="mlb-wind" name="mlb-wind" value="" placeholder="0" inputmode="decimal">
+          </label>
+          <label>Temperature (&deg;F)
+            <input id="mlb-temp" name="mlb-temp" value="" placeholder="70" inputmode="decimal">
+          </label>
+          <label>HR odds (American, optional)
+            <input id="mlb-hr-odds" name="mlb-hr-odds" value="" placeholder="e.g. 350" inputmode="numeric">
+          </label>
+          <label>Total bases line (optional)
+            <input id="mlb-tb-line" name="mlb-tb-line" value="" placeholder="e.g. 1.5" inputmode="decimal">
+          </label>
+          <label>TB over odds (American, optional)
+            <input id="mlb-tb-odds" name="mlb-tb-odds" value="" placeholder="e.g. 120" inputmode="numeric">
+          </label>
+          <button type="submit">Project props</button>
+        </form>
+        <div id="mlb-props-result" class="result muted">Waiting for an MLB prop projection.</div>
+      </article>
+
+      <article class="card">
+        <h2>Likely home run hitters by team</h2>
+        <p class="muted">Each team's batters ranked by the MLB prop model's chance of at least one home run this game. Informational only, not betting advice.</p>
+        <form id="mlb-hr-leaders-form">
+          <label>Team
+            <select id="mlb-hr-team" name="mlb-hr-team">
+              {mlb_team_options}
+            </select>
+          </label>
+          <label>Opposing pitcher (optional)
+            <input id="mlb-hr-pitcher" name="mlb-hr-pitcher" list="mlb-pitcher-options" value="" placeholder="League Average Pitcher">
+          </label>
+          <label>Ballpark
+            <select id="mlb-hr-park" name="mlb-hr-park">
+              {mlb_park_options}
+            </select>
+          </label>
+          <label>Players per team
+            <input id="mlb-hr-limit" name="mlb-hr-limit" value="3" inputmode="numeric">
+          </label>
+          <label>Wind out (mph, negative = in)
+            <input id="mlb-hr-wind" name="mlb-hr-wind" value="" placeholder="0" inputmode="decimal">
+          </label>
+          <label>Temperature (&deg;F)
+            <input id="mlb-hr-temp" name="mlb-hr-temp" value="" placeholder="70" inputmode="decimal">
+          </label>
+          <button type="submit">Load HR candidates</button>
+        </form>
+        <div id="mlb-hr-leaders-result" class="result muted">Waiting for a home run leaders lookup.</div>
       </article>
 
       <article class="card">
@@ -789,6 +877,114 @@ def render_home_page() -> str:
 
 
 EXTRA_SCRIPT = r"""
+    function pct(value) {
+      return value === null || value === undefined ? "n/a" : `${(value * 100).toFixed(1)}%`;
+    }
+
+    function mlbMarketMarkup(label, market) {
+      if (!market || market.implied_probability === null) {
+        return `<div class="metric"><strong>${esc(label)} market</strong><br>No odds</div>`;
+      }
+      const edgeClass = market.edge > 0 ? "success" : "danger";
+      return `<div class="metric"><strong>${esc(label)} market</strong><br>${esc(market.over_odds)} (${esc(market.source_mode)}) · implied ${pct(market.implied_probability)}<br><span class="${edgeClass}">Edge ${pct(market.edge)}</span>${market.no_vig_edge !== null ? ` · no-vig ${pct(market.no_vig_edge)}` : ""}</div>`;
+    }
+
+    async function loadMlbHrLeaders(event) {
+      event.preventDefault();
+      const target = byId("mlb-hr-leaders-result");
+      const params = new URLSearchParams();
+      const fields = [
+        ["team", "mlb-hr-team"], ["pitcher", "mlb-hr-pitcher"], ["park", "mlb-hr-park"], ["limit", "mlb-hr-limit"],
+        ["wind_out_mph", "mlb-hr-wind"], ["temperature_f", "mlb-hr-temp"],
+      ];
+      for (const [name, id] of fields) {
+        const value = byId(id).value.trim();
+        if (value) params.set(name, value);
+      }
+      target.textContent = "Ranking...";
+      try {
+        const response = await fetch(`/mlb/hr-leaders?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok) {
+          target.innerHTML = `<span class="danger">${esc(payload.error || "Request failed")}</span>`;
+          return;
+        }
+        if (!payload.teams.length) {
+          target.innerHTML = '<span class="muted">No batters found for this selection.</span>';
+          return;
+        }
+        const teamsMarkup = payload.teams.map((team) => `
+          <div class="profile-panel">
+            <h3>${esc(team.team)} <span class="muted">· ${esc(team.park.name)} (HR x${esc(team.park.hr_factor)})</span></h3>
+            <ol>
+              ${team.players.map((player) => `
+                <li><strong>${esc(player.name)}</strong> — P(HR) ${pct(player.game_probability)} (fair ${esc(player.fair_american_odds)})
+                  · ${esc(player.season_hr)} HR / ${esc(player.season_pa)} PA · ${esc(player.recent_trend)}
+                  ${player.edge !== null ? `· <span class="${player.edge > 0 ? "success" : "danger"}">edge ${pct(player.edge)}</span> vs ${esc(player.market_odds)} (${esc(player.market_source)})` : ""}
+                </li>`).join("")}
+            </ol>
+          </div>`).join("");
+        target.innerHTML = `
+          <div class="banner muted">vs ${esc(payload.pitcher.name)} · ${esc(payload.park)} · ${esc(payload.sources.sportsdataio.batters)} batter data</div>
+          ${teamsMarkup}
+          <p class="muted">${esc(payload.disclaimer)}</p>`;
+      } catch (error) {
+        target.innerHTML = '<span class="danger">Unable to load home run leaders.</span>';
+      }
+    }
+
+    async function loadMlbProps(event) {
+      event.preventDefault();
+      const target = byId("mlb-props-result");
+      const params = new URLSearchParams();
+      const fields = [
+        ["player", "mlb-player"], ["pitcher", "mlb-pitcher"], ["park", "mlb-park"], ["wind_out_mph", "mlb-wind"],
+        ["temperature_f", "mlb-temp"], ["hr_odds", "mlb-hr-odds"], ["tb_line", "mlb-tb-line"], ["tb_over_odds", "mlb-tb-odds"],
+      ];
+      for (const [name, id] of fields) {
+        const value = byId(id).value.trim();
+        if (value) params.set(name, value);
+      }
+      if (!params.get("player")) {
+        target.innerHTML = '<span class="danger">Enter a batter name.</span>';
+        return;
+      }
+      target.textContent = "Projecting...";
+      try {
+        const response = await fetch(`/mlb/props?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok) {
+          target.innerHTML = `<span class="danger">${esc(payload.error || "Request failed")}</span>`;
+          return;
+        }
+        const steps = payload.steps;
+        const hr = payload.home_run;
+        const tb = payload.total_bases;
+        target.innerHTML = `
+          <div class="banner muted">${esc(payload.player.name)} vs ${esc(payload.pitcher.name)} · ${esc(payload.park.name)}</div>
+          <div class="metric-grid">
+            <div class="metric"><strong>P(HR) this game</strong><br>${pct(hr.game_probability)} (fair ${esc(hr.fair_american_odds)})</div>
+            ${mlbMarketMarkup("HR", hr.market)}
+            <div class="metric"><strong>Expected TB</strong><br>${esc(tb.expected)} · P(over ${esc(tb.line)}) ${pct(tb.probability_over)}</div>
+            ${mlbMarketMarkup("TB", tb.market)}
+          </div>
+          <div class="profile-panel">
+            <h3>Model layers</h3>
+            <div class="metric-grid">
+              <div class="metric"><strong>1. Baseline HR/PA</strong><br>${pct(steps.baseline_power.hr_baseline)} · ISO ${esc(steps.baseline_power.iso)}</div>
+              <div class="metric"><strong>2. Recent form</strong><br>L10 ${pct(steps.recent_form.hr_l10)} → adj ${pct(steps.recent_form.hr_adj)} (${esc(steps.recent_form.trend)})</div>
+              <div class="metric"><strong>3. Pitcher</strong><br>x${esc(steps.pitcher_matchup.m_pitcher)} (HR/9 ${esc(steps.pitcher_matchup.pitcher_hr9)} ${esc(steps.pitcher_matchup.platoon_split)})</div>
+              <div class="metric"><strong>4. Park</strong><br>x${esc(steps.ballpark.m_park)}</div>
+              <div class="metric"><strong>5. Weather</strong><br>x${esc(steps.weather.m_weather)}${steps.weather.roof_closed ? " (roof closed)" : ""}</div>
+              <div class="metric"><strong>6. Pitch-type fit</strong><br>x${esc(steps.pitch_type.m_pitchtype)} → HR/PA ${pct(steps.pitch_type.hr_final)}</div>
+            </div>
+          </div>
+          <p class="muted">${esc(payload.disclaimer)}</p>`;
+      } catch (error) {
+        target.innerHTML = '<span class="danger">Unable to project MLB props.</span>';
+      }
+    }
+
     function esc(value) {
       return String(value ?? "").replace(/[&<>"']/g, (char) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char]));
     }
@@ -1289,6 +1485,8 @@ EXTRA_SCRIPT = r"""
     byId("odds-data-form").addEventListener("submit", loadOddsData);
     byId("grade-form").addEventListener("submit", gradeNow);
     byId("slate-form").addEventListener("submit", loadSlate);
+    byId("mlb-props-form").addEventListener("submit", loadMlbProps);
+    byId("mlb-hr-leaders-form").addEventListener("submit", loadMlbHrLeaders);
     byId("timeseries-form").addEventListener("submit", loadCharts);
     document.addEventListener("click", handleWatchClick);
     document.addEventListener("click", handleCopyClick);

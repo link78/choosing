@@ -797,6 +797,92 @@ class SportsDataIOClient:
             )
         return results
 
+    def fetch_mlb_season_batters(self, min_plate_appearances: int = 1) -> list[dict]:
+        """All MLB season batting lines from a single (cached) SportsDataIO `PlayerSeasonStats` call."""
+        season_stats = self._request(f"stats/json/PlayerSeasonStats/{self.season}", sport="baseball_mlb")
+        if not isinstance(season_stats, list):
+            return []
+        batters = []
+        for row in season_stats:
+            pa = _safe_int(row.get("PlateAppearances"), 0) or 0
+            if pa < min_plate_appearances:
+                continue
+            batters.append(
+                {
+                    "player_id": str(row.get("PlayerID") or ""),
+                    "name": row.get("Name") or " ".join(part for part in [row.get("FirstName"), row.get("LastName")] if part),
+                    "team": row.get("Team") or "",
+                    "season": {
+                        "games": _safe_int(row.get("Games"), 0) or 0,
+                        "pa": pa,
+                        "ab": _safe_int(row.get("AtBats"), 0) or 0,
+                        "hits": _safe_int(row.get("Hits"), 0) or 0,
+                        "doubles": _safe_int(row.get("Doubles"), 0) or 0,
+                        "triples": _safe_int(row.get("Triples"), 0) or 0,
+                        "hr": _safe_int(row.get("HomeRuns"), 0) or 0,
+                    },
+                }
+            )
+        return batters
+
+    def fetch_mlb_player_stats(self, player_name: str, recent_games: int = 10) -> dict | None:
+        """Season batting/pitching totals plus the last N game logs for an MLB player from SportsDataIO."""
+        season_stats = self._request(f"stats/json/PlayerSeasonStats/{self.season}", sport="baseball_mlb")
+        if not isinstance(season_stats, list):
+            return None
+        target = _normalize(player_name)
+        entry = next(
+            (
+                row
+                for row in season_stats
+                if _normalize(row.get("Name") or " ".join(part for part in [row.get("FirstName"), row.get("LastName")] if part)) == target
+            ),
+            None,
+        )
+        if entry is None:
+            return None
+        season = {
+            "games": _safe_int(entry.get("Games"), 0) or 0,
+            "pa": _safe_int(entry.get("PlateAppearances"), 0) or 0,
+            "ab": _safe_int(entry.get("AtBats"), 0) or 0,
+            "hits": _safe_int(entry.get("Hits"), 0) or 0,
+            "doubles": _safe_int(entry.get("Doubles"), 0) or 0,
+            "triples": _safe_int(entry.get("Triples"), 0) or 0,
+            "hr": _safe_int(entry.get("HomeRuns"), 0) or 0,
+        }
+        pitching = None
+        innings = _safe_float(entry.get("InningsPitchedDecimal"))
+        if innings:
+            pitching = {
+                "innings": innings,
+                "hr_allowed": _safe_int(entry.get("PitchingHomeRuns"), 0) or 0,
+                "hits_allowed": _safe_int(entry.get("PitchingHits"), 0) or 0,
+            }
+        recent = None
+        player_id = entry.get("PlayerID")
+        if player_id:
+            logs = self._request(
+                f"stats/json/PlayerGameStatsBySeason/{self.season}/{player_id}/{int(recent_games)}", sport="baseball_mlb"
+            )
+            if isinstance(logs, list) and logs:
+                recent = {"games": len(logs), "pa": 0, "hr": 0, "tb": 0}
+                for log in logs:
+                    singles = _safe_int(log.get("Singles"), 0) or 0
+                    doubles = _safe_int(log.get("Doubles"), 0) or 0
+                    triples = _safe_int(log.get("Triples"), 0) or 0
+                    homers = _safe_int(log.get("HomeRuns"), 0) or 0
+                    recent["pa"] += _safe_int(log.get("PlateAppearances"), 0) or 0
+                    recent["hr"] += homers
+                    recent["tb"] += singles + 2 * doubles + 3 * triples + 4 * homers
+        return {
+            "player_id": str(player_id or ""),
+            "name": entry.get("Name") or player_name,
+            "team": entry.get("Team") or "",
+            "season": season,
+            "recent": recent,
+            "pitching": pitching,
+        }
+
     def fetch_schedule_context(self, team: str, sport: str | None = None) -> dict | None:
         """Rest, back-to-back and travel from SportsDataIO `Schedules`/`Games` for the team's next game."""
         if not self.api_key or not team:
@@ -1177,6 +1263,51 @@ class OddsAPIClient:
                 "line": round(mean(lines), 1),
                 "over_odds": _consensus_price(over_prices),
                 "under_odds": _consensus_price(under_prices),
+                "bookmakers": len(over_prices),
+                "event_id": event["event_id"],
+                "commence_time": event["commence_time"],
+                "source_mode": "live",
+            }
+        return None
+
+    def fetch_player_prop_market(self, player_name: str, team: str, market: str, sport: str = "baseball_mlb") -> dict | None:
+        """Consensus prop line where the under side may be missing (e.g. `batter_home_runs` yes-only markets)."""
+        if not self.api_key:
+            return None
+        for event in self.fetch_events(sport):
+            if not (_team_matches(team, event["home_team"]) or _team_matches(team, event["away_team"])):
+                continue
+            payload = self._request(f"sports/{sport}/events/{event['event_id']}/odds", {"markets": market})
+            if not isinstance(payload, dict):
+                return None
+            lines = []
+            over_prices = []
+            under_prices = []
+            for bookmaker in payload.get("bookmakers", []):
+                for book_market in bookmaker.get("markets", []):
+                    if book_market.get("key") != market:
+                        continue
+                    for outcome in book_market.get("outcomes", []):
+                        if _normalize(outcome.get("description", "")) != _normalize(player_name):
+                            continue
+                        price = _safe_int(outcome.get("price"))
+                        if not price:
+                            continue
+                        point = _safe_float(outcome.get("point"))
+                        if point is not None:
+                            lines.append(point)
+                        side = str(outcome.get("name", "")).lower()
+                        if side in {"over", "yes"}:
+                            over_prices.append(price)
+                        elif side in {"under", "no"}:
+                            under_prices.append(price)
+            if not over_prices:
+                return None
+            return {
+                "market": market,
+                "line": round(mean(lines), 1) if lines else None,
+                "over_odds": _consensus_price(over_prices),
+                "under_odds": _consensus_price(under_prices) if under_prices else None,
                 "bookmakers": len(over_prices),
                 "event_id": event["event_id"],
                 "commence_time": event["commence_time"],
