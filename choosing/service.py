@@ -11,7 +11,10 @@ from .data_sources import (
     search_players,
     search_teams,
 )
+from .learner import WeightAdaptor
+from .metrics import build_backtest_summary
 from .prediction import build_game_edge, build_player_prediction, clamp
+from .storage import PredictionStore
 
 
 class PredictionService:
@@ -21,11 +24,15 @@ class PredictionService:
         odds_client: OddsAPIClient | None = None,
         media_client: MediaBroadcastClient | None = None,
         fantasy_client: FantasySportsAPIClient | None = None,
+        store: PredictionStore | None = None,
+        learner: WeightAdaptor | None = None,
     ) -> None:
         self.sports_client = sports_client or SportsDataIOClient()
         self.odds_client = odds_client or OddsAPIClient()
         self.media_client = media_client or MediaBroadcastClient()
         self.fantasy_client = fantasy_client or FantasySportsAPIClient()
+        self.store = store or PredictionStore()
+        self.learner = learner or WeightAdaptor()
 
     def _meta(self, entity_id: str, entity_type: str) -> dict:
         return {
@@ -35,7 +42,7 @@ class PredictionService:
             "advisory_only": True,
         }
 
-    def get_player_prediction(self, player_id: str, overrides: dict | None = None) -> dict:
+    def get_player_prediction(self, player_id: str, overrides: dict | None = None, persist: bool = True) -> dict:
         overrides = overrides or {}
         sports_data = self.sports_client.fetch_player_context(player_id, overrides)
         media_data = self.media_client.fetch_player_context(player_id, overrides)
@@ -93,9 +100,18 @@ class PredictionService:
                 "sports": _odds_api_catalog()["sports"],
             },
         }
+        if persist:
+            prediction_id = self.store.append_prediction("player", payload)
+            payload["meta"]["prediction_id"] = prediction_id
         return payload
 
-    def get_game_edge(self, game_id: str, sports_overrides: dict | None = None, odds_overrides: dict | None = None) -> dict:
+    def get_game_edge(
+        self,
+        game_id: str,
+        sports_overrides: dict | None = None,
+        odds_overrides: dict | None = None,
+        persist: bool = True,
+    ) -> dict:
         sports_data = self.sports_client.fetch_game_context(game_id, sports_overrides)
         odds_data = self.odds_client.fetch_game_market(game_id, odds_overrides)
         media_data = self.media_client.fetch_game_context(game_id, sports_overrides)
@@ -153,6 +169,10 @@ class PredictionService:
                 "market_source_confidence": round(odds_data["market_source_confidence"], 3),
             },
         }
+        payload["sport"] = resolve_player_sport(self.odds_client.sport)
+        if persist:
+            prediction_id = self.store.append_prediction("game", payload)
+            payload["meta"]["prediction_id"] = prediction_id
         return payload
 
     def search_players(self, query: str = "", team: str | None = None, sport: str | None = None) -> list[dict]:
@@ -174,6 +194,7 @@ class PredictionService:
                     "team": entry.get("team"),
                     "sport": selected_sport["odds_api_key"],
                 },
+                persist=False,
             )
             summaries.append(
                 {
@@ -221,6 +242,31 @@ class PredictionService:
             "fantasy_sports_api": self.fantasy_client.source_status(),
             "odds_api": self.odds_client.source_status(),
         }
+
+    def record_prediction_outcome(self, prediction_id: str, outcome: dict) -> dict | None:
+        record = self.store.record_outcome(prediction_id, outcome)
+        if not record:
+            return None
+        resolved_records = self.store.list_predictions(limit=500, resolved_only=True)
+        learned_models = self.learner.retrain(resolved_records)
+        return {
+            "prediction": record,
+            "backtest_summary": self.get_backtest_summary(),
+            "learned_models": {
+                "updated_at": learned_models.get("updated_at"),
+                "sports": sorted(learned_models.get("profiles", {}).keys()),
+            },
+        }
+
+    def get_backtest_summary(self) -> dict:
+        records = self.store.list_predictions(limit=500)
+        summary = build_backtest_summary(records)
+        learned_models = self.learner.load()
+        summary["learned_models"] = {
+            "updated_at": learned_models.get("updated_at"),
+            "sports": sorted(learned_models.get("profiles", {}).keys()),
+        }
+        return summary
 
 
 def _build_player_profile(prediction: dict, sports_data: dict) -> dict:

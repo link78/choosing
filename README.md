@@ -47,6 +47,8 @@ The repository still includes the underlying HTTP prediction utilities:
   (`sport=...` can be any supported Odds API sport key such as `basketball_nba` or `americanfootball_nfl`)
 - `GET /players/top?sport={sport_key}&limit=10` summarizes the top predicted players for a selected sport and includes each player's leading suggestion
 - `GET /game/{id}/edge` supports game ids or team names
+- `GET /backtest/summary.json` returns measured ROI, hit rate, Brier score, calibration bins, player error metrics, recent outcomes, and learned-model status
+- `POST /predictions/{prediction_id}/outcome` records actual outcomes for stored player/game predictions so backtesting can grade them over time
 - `GET /lookup/players?query={name}`
 - `GET /lookup/teams?query={team}`
 - `GET /` for the responsive UI
@@ -88,6 +90,15 @@ Recent computation upgrades now include:
 - market quality inputs such as book disagreement, consensus spread, and market stability
 - feature-tracking and heuristic calibration metadata to explain what is helping or hurting a projection
 
+Persistent backtesting and learning now include:
+
+- automatic storage of generated player and game predictions
+- persistent outcome recording for later grading
+- measured backtesting metrics such as ROI, hit rate, and Brier score
+- calibration bins based on resolved game outcomes
+- lightweight learned-model adaptation that updates sport profiles from recorded results
+- a dashboard section for backtesting performance and model-learning status
+
 ## Live API configuration
 
 Set these environment variables to fetch live upstream data before prediction and edge computation:
@@ -114,6 +125,17 @@ Behavior:
 - Media & Broadcast and Fantasy Sports API derive their live signals from the same SportsData-style upstream when pointed at the same base URL/key
 - if a live request fails or returns unusable data, the app safely falls back to the existing deterministic local model inputs
 - `/health` reports whether each upstream source is configured, whether its most recent upstream call succeeded, and the last error message when a provider fails
+
+## Persistent history
+
+By default the app stores prediction history and learned model files under:
+
+- `~/.choosing/history.sqlite3`
+- `~/.choosing/adapted_models.json`
+
+You can override that location with:
+
+- `CHOOSING_DATA_DIR`
 
 ## Run
 

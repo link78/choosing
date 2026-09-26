@@ -143,6 +143,27 @@ def app(environ, start_response):
     path = environ.get("PATH_INFO", "")
     query = parse_qs(environ.get("QUERY_STRING", ""))
 
+    if method == "POST" and path.startswith("/predictions/") and path.endswith("/outcome"):
+        prediction_id = unquote(path[len("/predictions/") : -len("/outcome")].strip("/"))
+        if not prediction_id:
+            return json_response(start_response, "404 Not Found", {"error": "Not found"})
+        try:
+            body_length = int(environ.get("CONTENT_LENGTH") or "0")
+        except ValueError:
+            body_length = 0
+        raw_body = environ.get("wsgi.input").read(body_length) if body_length else b""
+        try:
+            payload = json.loads(raw_body.decode("utf-8") or "{}")
+        except ValueError:
+            return json_response(start_response, "400 Bad Request", {"error": "invalid JSON body"})
+        try:
+            result = service.record_prediction_outcome(prediction_id, payload)
+        except ValueError as exc:
+            return json_response(start_response, "400 Bad Request", {"error": str(exc)})
+        if not result:
+            return json_response(start_response, "404 Not Found", {"error": "prediction not found"})
+        return json_response(start_response, "200 OK", result)
+
     if method != "GET":
         return json_response(start_response, "405 Method Not Allowed", {"error": "Method not allowed"})
 
@@ -151,6 +172,9 @@ def app(environ, start_response):
 
     if path == "/app.json":
         return json_response(start_response, "200 OK", app_metadata())
+
+    if path == "/backtest/summary.json":
+        return json_response(start_response, "200 OK", service.get_backtest_summary())
 
     if path == "/lookup/players":
         return json_response(

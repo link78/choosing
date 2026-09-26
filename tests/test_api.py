@@ -1,14 +1,19 @@
 import json
 import os
+import tempfile
 import unittest
 from io import BytesIO
 from unittest.mock import patch
 
 from choosing.api import app, service
+from choosing.learner import WeightAdaptor
+from choosing.service import PredictionService
+from choosing.storage import PredictionStore
 
 
-def request(path: str):
+def request(path: str, method: str = "GET", body: dict | None = None):
     captured = {}
+    raw_body = json.dumps(body).encode("utf-8") if body is not None else b""
 
     def start_response(status, headers):
         captured["status"] = status
@@ -17,10 +22,11 @@ def request(path: str):
     body = b"".join(
         app(
             {
-                "REQUEST_METHOD": "GET",
+                "REQUEST_METHOD": method,
                 "PATH_INFO": path.split("?", 1)[0],
                 "QUERY_STRING": path.split("?", 1)[1] if "?" in path else "",
-                "wsgi.input": BytesIO(),
+                "CONTENT_LENGTH": str(len(raw_body)),
+                "wsgi.input": BytesIO(raw_body),
             },
             start_response,
         )
@@ -33,6 +39,20 @@ def request(path: str):
 
 
 class PredictionApiTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.original_service = service
+        isolated_store = PredictionStore(data_dir=os.path.abspath(self.temp_dir.name))
+        isolated_learner = WeightAdaptor(model_path=os.path.join(self.temp_dir.name, "adapted_models.json"))
+        import choosing.api as api_module
+
+        api_module.service = PredictionService(store=isolated_store, learner=isolated_learner)
+        self.api_module = api_module
+
+    def tearDown(self):
+        self.api_module.service = self.original_service
+        self.temp_dir.cleanup()
+
     def test_root_endpoint_describes_application(self):
         response = request("/")
 
@@ -54,6 +74,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("Injury status", response["raw_body"])
         self.assertIn("Prediction confidence", response["raw_body"])
         self.assertIn("Edge quality", response["raw_body"])
+        self.assertIn("Backtesting &amp; learning", response["raw_body"])
         self.assertIn("Media &amp; Broadcast", response["raw_body"])
         self.assertIn("Fantasy Sports API", response["raw_body"])
         self.assertIn("The Odds API endpoints", response["raw_body"])
@@ -82,17 +103,18 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["upstream_sports"]["the_odds_api"][-1]["name"], "Olympics")
         self.assertEqual(response["body"]["endpoints"]["top_players"], "/players/top?sport={sport_key}&limit=10")
         self.assertEqual(response["body"]["endpoints"]["game_edge"], "/game/{id}/edge")
+        self.assertEqual(response["body"]["endpoints"]["backtest_summary"], "/backtest/summary.json")
 
     def test_health_endpoint_reports_source_modes(self):
         with patch.dict(os.environ, {}, clear=True):
-            service.sports_client._last_call_succeeded = None
-            service.sports_client._last_error_message = None
-            service.media_client._last_call_succeeded = None
-            service.media_client._last_error_message = None
-            service.fantasy_client._last_call_succeeded = None
-            service.fantasy_client._last_error_message = None
-            service.odds_client._last_call_succeeded = None
-            service.odds_client._last_error_message = None
+            self.api_module.service.sports_client._last_call_succeeded = None
+            self.api_module.service.sports_client._last_error_message = None
+            self.api_module.service.media_client._last_call_succeeded = None
+            self.api_module.service.media_client._last_error_message = None
+            self.api_module.service.fantasy_client._last_call_succeeded = None
+            self.api_module.service.fantasy_client._last_error_message = None
+            self.api_module.service.odds_client._last_call_succeeded = None
+            self.api_module.service.odds_client._last_error_message = None
             response = request("/health")
 
         self.assertEqual(response["status"], "200 OK")
@@ -121,14 +143,14 @@ class PredictionApiTests(unittest.TestCase):
             },
             clear=True,
         ):
-            service.sports_client._last_call_succeeded = True
-            service.sports_client._last_error_message = None
-            service.media_client._last_call_succeeded = True
-            service.media_client._last_error_message = None
-            service.fantasy_client._last_call_succeeded = False
-            service.fantasy_client._last_error_message = "projection feed unavailable"
-            service.odds_client._last_call_succeeded = False
-            service.odds_client._last_error_message = "upstream timeout"
+            self.api_module.service.sports_client._last_call_succeeded = True
+            self.api_module.service.sports_client._last_error_message = None
+            self.api_module.service.media_client._last_call_succeeded = True
+            self.api_module.service.media_client._last_error_message = None
+            self.api_module.service.fantasy_client._last_call_succeeded = False
+            self.api_module.service.fantasy_client._last_error_message = "projection feed unavailable"
+            self.api_module.service.odds_client._last_call_succeeded = False
+            self.api_module.service.odds_client._last_error_message = "upstream timeout"
             response = request("/health")
 
         self.assertTrue(response["body"]["sources"]["sports_data_io"]["configured"])
@@ -154,6 +176,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["player_id"], "42")
         self.assertEqual(response["body"]["sources"], ["SportsDataIO", "Media & Broadcast", "Fantasy Sports API"])
         self.assertTrue(response["body"]["meta"]["advisory_only"])
+        self.assertIn("prediction_id", response["body"]["meta"])
         predictions = response["body"]["predictions"]
         self.assertGreaterEqual(predictions["expected_minutes"], 0)
         self.assertLessEqual(predictions["expected_minutes"], 48)
@@ -271,6 +294,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("confidence", response["body"]["betting_edge"])
         self.assertIn("edge_quality", response["body"]["betting_edge"])
         self.assertIn("win_probability_range", response["body"]["team_prediction"])
+        self.assertIn("prediction_id", response["body"]["meta"])
         self.assertIn("context_signals", response["body"])
         self.assertIn("media_broadcast", response["body"]["source_snapshots"])
         self.assertIn("fantasy_sports_api", response["body"]["source_snapshots"])
@@ -325,6 +349,25 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(sport_filtered_player_response["body"]["players"][0]["name"], "Patrick Mahomes")
         self.assertEqual(team_response["status"], "200 OK")
         self.assertEqual(team_response["body"]["teams"][0]["team"], "Golden State Warriors")
+
+    def test_backtest_summary_and_outcome_recording_endpoints(self):
+        prediction = request("/game/Golden%20State%20Warriors/edge?model_probability=0.61&odds=-110")
+        prediction_id = prediction["body"]["meta"]["prediction_id"]
+
+        outcome_response = request(
+            f"/predictions/{prediction_id}/outcome",
+            method="POST",
+            body={"actual_outcome": 1, "actual_odds": -110},
+        )
+        self.assertEqual(outcome_response["status"], "200 OK")
+        self.assertEqual(outcome_response["body"]["prediction"]["prediction_id"], prediction_id)
+        self.assertIn("backtest_summary", outcome_response["body"])
+
+        summary = request("/backtest/summary.json")
+        self.assertEqual(summary["status"], "200 OK")
+        self.assertEqual(summary["body"]["resolved_games"], 1)
+        self.assertIsNotNone(summary["body"]["roi"])
+        self.assertIsNotNone(summary["body"]["brier_score"])
 
 
 if __name__ == "__main__":

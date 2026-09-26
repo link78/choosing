@@ -71,6 +71,7 @@ class BettingApplication:
         if prediction["predictions"]["expected_minutes"] >= 34:
             flags.append("high_minutes_projection")
         return {
+            "prediction_id": prediction["meta"].get("prediction_id"),
             "player_id": prediction["player_id"],
             "player_name": prediction["player_name"],
             "team": prediction["team"],
@@ -104,6 +105,7 @@ class BettingApplication:
         stake_rate = STAKE_RATES[edge["betting_edge"]["recommended_stake"]]
         stake_amount = round(bankroll * stake_rate, 2)
         return {
+            "prediction_id": edge["meta"].get("prediction_id"),
             "game_id": edge["game_id"],
             "team_prediction": edge["team_prediction"],
             "context_signals": edge["context_signals"],

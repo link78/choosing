@@ -22,6 +22,8 @@ def app_metadata() -> dict:
             "player_prediction": "/player/{id}/prediction",
             "top_players": "/players/top?sport={sport_key}&limit=10",
             "game_edge": "/game/{id}/edge",
+            "backtest_summary": "/backtest/summary.json",
+            "record_outcome": "/predictions/{prediction_id}/outcome",
             "player_lookup": "/lookup/players?query={name}",
             "team_lookup": "/lookup/teams?query={team}",
             "app_metadata": "/app.json",
@@ -293,6 +295,27 @@ def render_home_page() -> str:
         </form>
         <div id="top-players-result" class="result muted">Waiting for a sport summary.</div>
       </article>
+
+      <article class="card">
+        <h2>Backtesting &amp; learning</h2>
+        <p class="muted">Record actual outcomes, review measured performance, and monitor learned-model updates.</p>
+        <form id="outcome-form">
+          <label>Prediction id
+            <input id="outcome-prediction-id" name="outcome-prediction-id" value="" placeholder="Paste a prediction id">
+          </label>
+          <label>Actual outcome (game bet: 1 or 0)
+            <input id="actual-outcome" name="actual-outcome" value="" placeholder="1 for win, 0 for loss" inputmode="decimal">
+          </label>
+          <label>Actual points (player optional)
+            <input id="actual-points" name="actual-points" value="" placeholder="e.g. 28.5" inputmode="decimal">
+          </label>
+          <label>Actual minutes (player optional)
+            <input id="actual-minutes" name="actual-minutes" value="" placeholder="e.g. 35" inputmode="decimal">
+          </label>
+          <button type="submit">Record outcome</button>
+        </form>
+        <div id="outcome-result" class="result muted">Waiting for recorded outcomes.</div>
+      </article>
     </section>
 
     <section class="cards">
@@ -321,6 +344,10 @@ def render_home_page() -> str:
           {odds_sport_markup}
         </div>
       </article>
+      <article class="card">
+        <h3>Measured backtest summary</h3>
+        <div id="backtest-summary" class="result muted">Loading backtest summary...</div>
+      </article>
     </section>
   </main>
 
@@ -343,6 +370,7 @@ def render_home_page() -> str:
             <h3>Prediction</h3>
             <div class="metric-grid">
               <div class="metric"><strong>Player</strong><br>${{payload.player_name}}</div>
+              <div class="metric"><strong>Prediction id</strong><br>${{payload.meta.prediction_id || "Not stored"}}</div>
               <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
               <div class="metric"><strong>Sport</strong><br>${{payload.sport.name}} · ${{payload.sport.league}}</div>
               <div class="metric"><strong>Minutes</strong><br>${{payload.predictions.expected_minutes}}</div>
@@ -430,10 +458,58 @@ def render_home_page() -> str:
       `;
     }}
 
+    function backtestMarkup(payload) {{
+      const curve = payload.calibration_curve || [];
+      const recent = payload.recent_results || [];
+      return `
+        <div class="profile-stack">
+          <div class="profile-panel">
+            <h3>Performance</h3>
+            <div class="metric-grid">
+              <div class="metric"><strong>Total predictions</strong><br>${{payload.total_predictions}}</div>
+              <div class="metric"><strong>Resolved</strong><br>${{payload.resolved_predictions}}</div>
+              <div class="metric"><strong>ROI</strong><br>${{payload.roi ?? "N/A"}}</div>
+              <div class="metric"><strong>Hit rate</strong><br>${{payload.hit_rate ?? "N/A"}}</div>
+              <div class="metric"><strong>Brier score</strong><br>${{payload.brier_score ?? "N/A"}}</div>
+              <div class="metric"><strong>Player MAE</strong><br>${{payload.player_mean_absolute_error ?? "N/A"}}</div>
+            </div>
+          </div>
+          <div class="profile-panel">
+            <h3>Learned models</h3>
+            <div class="metric-grid">
+              <div class="metric"><strong>Updated at</strong><br>${{payload.learned_models?.updated_at || "Not trained yet"}}</div>
+              <div class="metric"><strong>Sports</strong><br>${{(payload.learned_models?.sports || []).join(", ") || "None"}}</div>
+            </div>
+          </div>
+          <div class="profile-panel">
+            <h3>Calibration</h3>
+            <div class="metric-grid">
+              ${{
+                curve.length
+                  ? curve.map((item) => `<div class="metric"><strong>${{item.range}}</strong><br>Pred ${{item.predicted}}<br>Actual ${{item.actual}}<br>Count ${{item.count}}</div>`).join("")
+                  : '<div class="metric"><strong>No calibration data</strong><br>Record resolved game outcomes to measure it.</div>'
+              }}
+            </div>
+          </div>
+          <div class="profile-panel">
+            <h3>Recent results</h3>
+            <div class="metric-grid">
+              ${{
+                recent.length
+                  ? recent.map((item) => `<div class="metric"><strong>${{item.subject}}</strong><br>${{item.prediction_id}}<br>Action: ${{item.recommended_action || "tracked"}}<br>Profit: ${{item.profit_units ?? "N/A"}}</div>`).join("")
+                  : '<div class="metric"><strong>No stored history</strong><br>Generate predictions and record outcomes to build backtesting.</div>'
+              }}
+            </div>
+          </div>
+        </div>
+      `;
+    }}
+
     function gameMarkup(payload) {{
       return `
         <div class="metric-grid">
           <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
+          <div class="metric"><strong>Prediction id</strong><br>${{payload.meta.prediction_id || "Not stored"}}</div>
           <div class="metric"><strong>Opponent</strong><br>${{payload.opponent}}</div>
           <div class="metric"><strong>Win probability</strong><br>${{payload.team_prediction.win_probability}}</div>
           <div class="metric"><strong>Win range</strong><br>${{payload.team_prediction.win_probability_range.low}} - ${{payload.team_prediction.win_probability_range.high}}</div>
@@ -493,6 +569,42 @@ def render_home_page() -> str:
       target.innerHTML = response.ok ? topPlayersMarkup(payload) : `<span class="danger">${{payload.error || "Request failed"}}</span>`;
     }}
 
+    async function loadBacktestSummary() {{
+      const target = byId("backtest-summary");
+      const response = await fetch("/backtest/summary.json");
+      const payload = await response.json();
+      target.innerHTML = response.ok ? backtestMarkup(payload) : `<span class="danger">${{payload.error || "Request failed"}}</span>`;
+    }}
+
+    async function recordOutcome(event) {{
+      event.preventDefault();
+      const target = byId("outcome-result");
+      const predictionId = byId("outcome-prediction-id").value.trim();
+      if (!predictionId) {{
+        target.innerHTML = '<span class="danger">Prediction id is required.</span>';
+        return;
+      }}
+      const payload = {{}};
+      const actualOutcome = byId("actual-outcome").value.trim();
+      const actualPoints = byId("actual-points").value.trim();
+      const actualMinutes = byId("actual-minutes").value.trim();
+      if (actualOutcome) payload.actual_outcome = Number(actualOutcome);
+      if (actualPoints) payload.actual_points = Number(actualPoints);
+      if (actualMinutes) payload.actual_minutes = Number(actualMinutes);
+      const response = await fetch(`/predictions/${{encodeURIComponent(predictionId)}}/outcome`, {{
+        method: "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify(payload),
+      }});
+      const result = await response.json();
+      target.innerHTML = response.ok
+        ? `<strong>Outcome recorded.</strong><br>Prediction: ${{result.prediction.prediction_id}}`
+        : `<span class="danger">${{result.error || "Request failed"}}</span>`;
+      if (response.ok) {{
+        await loadBacktestSummary();
+      }}
+    }}
+
     async function loadSelectedTopPlayer(event) {{
       const button = event.target.closest(".top-player-button");
       if (!button) return;
@@ -505,7 +617,9 @@ def render_home_page() -> str:
     byId("player-form").addEventListener("submit", loadPlayer);
     byId("game-form").addEventListener("submit", loadGame);
     byId("top-players-form").addEventListener("submit", loadTopPlayers);
+    byId("outcome-form").addEventListener("submit", recordOutcome);
     byId("top-players-result").addEventListener("click", loadSelectedTopPlayer);
+    loadBacktestSummary();
   </script>
 </body>
 </html>"""

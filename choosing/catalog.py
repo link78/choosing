@@ -1,3 +1,7 @@
+import json
+import os
+from pathlib import Path
+
 PLAYER_SPORT = {
     "name": "Basketball",
     "league": "NBA",
@@ -138,13 +142,15 @@ def resolve_player_sport(selection: str | None = None) -> dict:
 def resolve_sport_model(selection: str | None = None) -> dict:
     sport = resolve_player_sport(selection)
     model = SPORT_MODEL_PROFILES.get(sport["odds_api_key"], DEFAULT_SPORT_MODEL)
+    adapted_profiles = _load_adapted_profiles()
+    adapted = adapted_profiles.get(sport["odds_api_key"], {})
     return {
         "form_weights": dict(model["form_weights"]),
-        "minutes": dict(model["minutes"]),
-        "performance": dict(model["performance"]),
-        "points": dict(model["points"]),
-        "risk": dict(model["risk"]),
-        "game": dict(model["game"]),
+        "minutes": {**dict(model["minutes"]), **dict(adapted.get("minutes", {}))},
+        "performance": {**dict(model["performance"]), **dict(adapted.get("performance", {}))},
+        "points": {**dict(model["points"]), **dict(adapted.get("points", {}))},
+        "risk": {**dict(model["risk"]), **dict(adapted.get("risk", {}))},
+        "game": {**dict(model["game"]), **dict(adapted.get("game", {}))},
     }
 
 
@@ -170,3 +176,16 @@ def _sport_profile(sport: dict) -> dict:
         "league": league,
         "odds_api_key": sport["key"],
     }
+
+
+def _load_adapted_profiles() -> dict:
+    configured = os.environ.get("CHOOSING_DATA_DIR", "").strip()
+    data_dir = Path(configured).expanduser() if configured else Path.home() / ".choosing"
+    model_path = data_dir / "adapted_models.json"
+    if not model_path.exists():
+        return {}
+    try:
+        payload = json.loads(model_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return payload.get("profiles", {})
