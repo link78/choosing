@@ -4,7 +4,7 @@ import json
 import os
 from urllib.parse import parse_qs, unquote
 
-from .elo import normalize_surface
+from .elo import TENNIS_SURFACES, normalize_surface
 from .grading import parse_grade_date
 from .metrics import BREAKDOWN_DIMENSIONS, TIMESERIES_WINDOWS
 from .service import PredictionService
@@ -496,8 +496,10 @@ def app(environ, start_response):
             return json_response(start_response, "400 Bad Request", {"error": f"opponent must be at most {MAX_NAME_LENGTH} characters"})
         try:
             surface = normalize_surface(query.get("surface", [""])[0])
-        except ValueError as exc:
-            return json_response(start_response, "400 Bad Request", {"error": str(exc)})
+        except ValueError:
+            return json_response(
+                start_response, "400 Bad Request", {"error": f"surface must be one of {', '.join(TENNIS_SURFACES)}"}
+            )
         try:
             payload = service.get_game_edge(
                 game_id, sports_overrides, odds_overrides, sport=game_sport, opponent=opponent, surface=surface
