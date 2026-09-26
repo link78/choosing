@@ -396,7 +396,15 @@ def render_home_page() -> str:
                     ${{player.team}} · ${{player.sport.league}}<br>
                     Performance: ${{player.expected_performance}}<br>
                     Points: ${{player.expected_points}}<br>
-                    Outlook: ${{player.scoring_outlook}}
+                    Outlook: ${{player.scoring_outlook}}<br>
+                    <button
+                      type="button"
+                      class="top-player-button"
+                      data-player-name="${{player.player_name}}"
+                      data-player-team="${{player.team}}"
+                      data-player-sport="${{player.sport.odds_api_key}}">
+                      View player data
+                    </button>
                   </div>
                 `).join("")
               }}
@@ -465,9 +473,19 @@ def render_home_page() -> str:
       target.innerHTML = response.ok ? topPlayersMarkup(payload) : `<span class="danger">${{payload.error || "Request failed"}}</span>`;
     }}
 
+    async function loadSelectedTopPlayer(event) {{
+      const button = event.target.closest(".top-player-button");
+      if (!button) return;
+      byId("player-id").value = button.dataset.playerName || "";
+      byId("player-team").value = button.dataset.playerTeam || "";
+      byId("player-sport").value = button.dataset.playerSport || "";
+      await loadPlayer(event);
+    }}
+
     byId("player-form").addEventListener("submit", loadPlayer);
     byId("game-form").addEventListener("submit", loadGame);
     byId("top-players-form").addEventListener("submit", loadTopPlayers);
+    byId("top-players-result").addEventListener("click", loadSelectedTopPlayer);
   </script>
 </body>
 </html>"""

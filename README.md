@@ -77,7 +77,7 @@ The displayed The Odds API sport coverage includes:
 - Tennis
 - Olympics
 
-The dashboard also includes a "Top players by sport" section that ranks up to 10 players by predicted performance for the selected sport.
+The dashboard also includes a "Top players by sport" section that ranks up to 10 players by predicted performance for the selected sport and lets you click a player to load the full player prediction view.
 
 ## Live API configuration
 

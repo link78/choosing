@@ -169,6 +169,11 @@ class PredictionService:
                     "player_name": prediction["player_name"],
                     "team": prediction["team"],
                     "sport": prediction["sport"],
+                    "player_prediction_path": (
+                        f"/player/{prediction['player_name'].replace(' ', '%20')}/prediction"
+                        f"?team={prediction['team'].replace(' ', '%20')}"
+                        f"&sport={selected_sport['odds_api_key']}"
+                    ),
                     "expected_points": prediction["predictions"]["expected_points"],
                     "expected_performance": prediction["predictions"]["expected_performance"],
                     "scoring_outlook": prediction["predictions"]["scoring_outlook"],

@@ -48,6 +48,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn('id="player-sport"', response["raw_body"])
         self.assertIn('id="top-players-sport"', response["raw_body"])
         self.assertIn("Top players by sport", response["raw_body"])
+        self.assertIn("View player data", response["raw_body"])
         self.assertIn("americanfootball_nfl", response["raw_body"])
         self.assertIn("Player profile", response["raw_body"])
         self.assertIn("Injury status", response["raw_body"])
@@ -218,6 +219,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["sport"]["league"], "NBA")
         self.assertEqual(response["body"]["summary"]["returned"], 10)
         self.assertEqual(len(response["body"]["top_players"]), 10)
+        self.assertIn("/player/", response["body"]["top_players"][0]["player_prediction_path"])
         self.assertGreaterEqual(
             response["body"]["top_players"][0]["expected_performance"],
             response["body"]["top_players"][-1]["expected_performance"],
