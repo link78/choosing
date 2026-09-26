@@ -27,6 +27,14 @@ PLAYER_DIRECTORY = [
     {"id": "103", "name": "Christian McCaffrey", "team": "San Francisco 49ers", "sport_key": "americanfootball_nfl", "aliases": ["mccaffrey", "christian"]},
     {"id": "201", "name": "Shohei Ohtani", "team": "Los Angeles Dodgers", "sport_key": "baseball_mlb", "aliases": ["ohtani", "shohei"]},
     {"id": "202", "name": "Aaron Judge", "team": "New York Yankees", "sport_key": "baseball_mlb", "aliases": ["judge", "aaron"]},
+    {"id": "203", "name": "Juan Soto", "team": "New York Yankees", "sport_key": "baseball_mlb", "aliases": ["soto", "juan"]},
+    {"id": "204", "name": "Mookie Betts", "team": "Los Angeles Dodgers", "sport_key": "baseball_mlb", "aliases": ["betts", "mookie"]},
+    {"id": "205", "name": "Ronald Acuna Jr.", "team": "Atlanta Braves", "sport_key": "baseball_mlb", "aliases": ["acuna", "ronald"]},
+    {"id": "206", "name": "Freddie Freeman", "team": "Los Angeles Dodgers", "sport_key": "baseball_mlb", "aliases": ["freeman", "freddie"]},
+    {"id": "207", "name": "Bobby Witt Jr.", "team": "Kansas City Royals", "sport_key": "baseball_mlb", "aliases": ["witt", "bobby"]},
+    {"id": "208", "name": "Gunnar Henderson", "team": "Baltimore Orioles", "sport_key": "baseball_mlb", "aliases": ["gunnar", "henderson"]},
+    {"id": "209", "name": "Corey Seager", "team": "Texas Rangers", "sport_key": "baseball_mlb", "aliases": ["seager", "corey"]},
+    {"id": "210", "name": "Bryce Harper", "team": "Philadelphia Phillies", "sport_key": "baseball_mlb", "aliases": ["harper", "bryce"]},
     {"id": "301", "name": "Connor McDavid", "team": "Edmonton Oilers", "sport_key": "icehockey_nhl", "aliases": ["mcdavid", "connor"]},
 ]
 
