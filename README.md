@@ -62,7 +62,7 @@ The repository still includes the underlying HTTP prediction utilities:
 - `GET /app.json` for machine-readable app metadata
 - `GET /health`
 
-The home dashboard and `/app.json` also display the tracked The Odds API endpoint catalog:
+The `/app.json` metadata exposes the tracked The Odds API endpoint catalog (the home dashboard instead shows a **Coverage** card with the sports, players, and teams Choosing tracks):
 
 - `/sports`
 - `/sports/{sport}/odds`
