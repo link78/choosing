@@ -165,6 +165,8 @@ def app(environ, start_response):
             return json_response(start_response, "400 Bad Request", {"errors": errors})
         if "team" in query and query["team"][0].strip():
             overrides["team"] = query["team"][0].strip()
+        if "sport" in query and query["sport"][0].strip():
+            overrides["sport"] = query["sport"][0].strip()
         for bounded_field in {
             "recent_form",
             "workload",

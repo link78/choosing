@@ -46,6 +46,10 @@ def render_home_page() -> str:
         )
         for entry in metadata["upstream_sports"]["the_odds_api"]
     )
+    player_sport_options = "\n".join(
+        f'<option value="{sport["key"]}">{sport["name"]}</option>'
+        for sport in metadata["upstream_sports"]["the_odds_api"]
+    )
     player_options = "\n".join(
         f'<option value="{player["name"]}">{player["team"]}</option>' for player in search_players()
     )
@@ -134,7 +138,7 @@ def render_home_page() -> str:
       display: grid;
       gap: 6px;
     }}
-    input {{
+    input, select {{
       width: 100%;
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -244,6 +248,11 @@ def render_home_page() -> str:
           </label>
           <label>Team (optional)
             <input id="player-team" name="player-team" value="" placeholder="Filter by team" list="team-options">
+          </label>
+          <label>Sport
+            <select id="player-sport" name="player-sport">
+              {player_sport_options}
+            </select>
           </label>
           <datalist id="player-options">{player_options}</datalist>
           <datalist id="team-options">{team_options}</datalist>
@@ -372,7 +381,9 @@ def render_home_page() -> str:
       const playerId = encodeURIComponent(byId("player-id").value.trim());
       const params = new URLSearchParams();
       const team = byId("player-team").value.trim();
+      const sport = byId("player-sport").value.trim();
       if (team) params.set("team", team);
+      if (sport) params.set("sport", sport);
       const suffix = params.toString() ? `?${{params.toString()}}` : "";
       const response = await fetch(`/player/${{playerId}}/prediction${{suffix}}`);
       const payload = await response.json();

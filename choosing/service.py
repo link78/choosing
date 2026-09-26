@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .catalog import ODDS_API_ENDPOINTS, ODDS_API_SPORTS, PLAYER_SPORT
+from .catalog import ODDS_API_ENDPOINTS, ODDS_API_SPORTS, resolve_player_sport
 from .data_sources import (
     FantasySportsAPIClient,
     MediaBroadcastClient,
@@ -36,17 +36,19 @@ class PredictionService:
         }
 
     def get_player_prediction(self, player_id: str, overrides: dict | None = None) -> dict:
+        overrides = overrides or {}
         sports_data = self.sports_client.fetch_player_context(player_id, overrides)
         media_data = self.media_client.fetch_player_context(player_id, overrides)
         fantasy_data = self.fantasy_client.fetch_player_context(player_id, overrides)
         player_inputs = dict(sports_data)
         player_inputs.update({key: value for key, value in media_data.items() if key != "source_mode"})
         player_inputs.update({key: value for key, value in fantasy_data.items() if key != "source_mode"})
+        player_inputs["sport"] = resolve_player_sport(overrides.get("sport"))
         payload = build_player_prediction(sports_data["player_id"], player_inputs)
         payload["meta"] = self._meta(sports_data["player_id"], "player")
         payload["player_name"] = sports_data["player_name"]
         payload["team"] = sports_data["team"]
-        payload["sport"] = dict(PLAYER_SPORT)
+        payload["sport"] = dict(player_inputs["sport"])
         payload["injury_status"] = sports_data.get("injury_status", "Unknown")
         payload["player_profile"] = _build_player_profile(payload, player_inputs)
         payload["odds_api_catalog"] = _odds_api_catalog()
@@ -201,7 +203,7 @@ def _build_player_profile(prediction: dict, sports_data: dict) -> dict:
         "scoring_band": scoring_band,
         "risk_level": risk_level,
         "projected_role": "Featured scorer" if expected_minutes >= 32 or expected_points >= 24 else "Rotation scorer",
-        "sport": dict(PLAYER_SPORT),
+        "sport": dict(sports_data.get("sport", resolve_player_sport())),
         "injury_status": sports_data.get("injury_status", "Unknown"),
         "odds_api_coverage": _odds_api_catalog(),
         "computation_data": {

@@ -29,3 +29,36 @@ ODDS_API_SPORTS = [
     {"name": "Tennis", "key": "tennis_*"},
     {"name": "Olympics", "key": "olympics_*"},
 ]
+
+
+def resolve_player_sport(selection: str | None = None) -> dict:
+    normalized = (selection or "").strip().lower()
+    if normalized:
+        for sport in ODDS_API_SPORTS:
+            if normalized in {sport["name"].lower(), sport["key"].lower()}:
+                return _sport_profile(sport)
+    return dict(PLAYER_SPORT)
+
+
+def _sport_profile(sport: dict) -> dict:
+    name = sport["name"]
+    if name == "NFL":
+        sport_name = "American Football"
+        league = "NFL"
+    elif name == "MLB":
+        sport_name = "Baseball"
+        league = "MLB"
+    elif name == "NBA":
+        sport_name = "Basketball"
+        league = "NBA"
+    elif name == "NHL":
+        sport_name = "Ice Hockey"
+        league = "NHL"
+    else:
+        sport_name = name
+        league = name
+    return {
+        "name": sport_name,
+        "league": league,
+        "odds_api_key": sport["key"],
+    }

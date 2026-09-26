@@ -45,6 +45,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertNotIn("Jayson Tatum", response["raw_body"])
         self.assertIn('placeholder="Search player name"', response["raw_body"])
         self.assertIn('placeholder="Search team name"', response["raw_body"])
+        self.assertIn('id="player-sport"', response["raw_body"])
+        self.assertIn("americanfootball_nfl", response["raw_body"])
         self.assertIn("Player profile", response["raw_body"])
         self.assertIn("Injury status", response["raw_body"])
         self.assertIn("Media &amp; Broadcast", response["raw_body"])
@@ -186,6 +188,15 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["team"], "Golden State Warriors")
         self.assertIn(response["body"]["player_profile"]["risk_level"], {"Low", "Moderate", "High"})
         self.assertIn(response["body"]["injury_status"], {"Available", "Monitor", "Questionable", "Out"})
+
+    def test_player_prediction_endpoint_supports_selected_sport(self):
+        response = request("/player/Stephen%20Curry/prediction?team=Golden%20State%20Warriors&sport=americanfootball_nfl")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["body"]["sport"]["name"], "American Football")
+        self.assertEqual(response["body"]["sport"]["league"], "NFL")
+        self.assertEqual(response["body"]["sport"]["odds_api_key"], "americanfootball_nfl")
+        self.assertEqual(response["body"]["player_profile"]["sport"]["league"], "NFL")
 
     def test_player_prediction_endpoint_applies_overrides(self):
         response = request(
