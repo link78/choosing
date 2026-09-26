@@ -158,8 +158,10 @@ def app(environ, start_response):
             return json_response(start_response, "400 Bad Request", {"error": "invalid JSON body"})
         try:
             result = service.record_prediction_outcome(prediction_id, payload)
-        except ValueError as exc:
-            return json_response(start_response, "400 Bad Request", {"error": str(exc)})
+        except ValueError:
+            return json_response(start_response, "400 Bad Request", {"error": "invalid outcome payload"})
+        except Exception:
+            return json_response(start_response, "500 Internal Server Error", {"error": "unable to record outcome"})
         if not result:
             return json_response(start_response, "404 Not Found", {"error": "prediction not found"})
         return json_response(start_response, "200 OK", result)
@@ -282,7 +284,13 @@ def app(environ, start_response):
                 "400 Bad Request",
                 {"error": "injury_days_out must be zero or greater"},
             )
-        return json_response(start_response, "200 OK", service.get_player_prediction(player_id, overrides))
+        try:
+            payload = service.get_player_prediction(player_id, overrides)
+        except ValueError:
+            return json_response(start_response, "400 Bad Request", {"error": "invalid player prediction request"})
+        except Exception:
+            return json_response(start_response, "500 Internal Server Error", {"error": "unable to generate player prediction"})
+        return json_response(start_response, "200 OK", payload)
 
     if path.startswith("/game/") and path.endswith("/edge"):
         game_id = unquote(path[len("/game/") : -len("/edge")].strip("/"))
@@ -363,7 +371,13 @@ def app(environ, start_response):
                     "400 Bad Request",
                     {"error": f"{odds_field} cannot be zero"},
                 )
-        return json_response(start_response, "200 OK", service.get_game_edge(game_id, sports_overrides, odds_overrides))
+        try:
+            payload = service.get_game_edge(game_id, sports_overrides, odds_overrides)
+        except ValueError:
+            return json_response(start_response, "400 Bad Request", {"error": "invalid game edge request"})
+        except Exception:
+            return json_response(start_response, "500 Internal Server Error", {"error": "unable to generate game edge"})
+        return json_response(start_response, "200 OK", payload)
 
     return json_response(start_response, "404 Not Found", {"error": "Not found"})
 
