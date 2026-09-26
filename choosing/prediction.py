@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from hashlib import sha256
 
 
@@ -77,6 +78,127 @@ def stable_float(seed: str, minimum: float, maximum: float) -> float:
     digest = sha256(seed.encode("utf-8")).hexdigest()
     ratio = int(digest[:8], 16) / 0xFFFFFFFF
     return minimum + (maximum - minimum) * ratio
+
+
+MODEL_VERSION = "2026.09-platt-kelly"
+KELLY_FRACTION = 0.25
+KELLY_CAPS = {"Low": 0.01, "Moderate": 0.02, "High": 0.03}
+BET_EDGE_THRESHOLD = 0.03
+BET_QUALITY_THRESHOLD = 0.38
+
+
+def kelly_stake(probability: float | None, american_odds: int | None, confidence_band: str, bankroll_units: float = 100.0) -> dict:
+    """Fractional Kelly stake capped by confidence band (fractions are of bankroll)."""
+    cap = KELLY_CAPS.get(confidence_band, KELLY_CAPS["Low"])
+    if probability is None or not american_odds:
+        full_kelly = 0.0
+    else:
+        net_odds = american_odds / 100 if american_odds > 0 else 100 / abs(american_odds)
+        full_kelly = max((net_odds * probability - (1 - probability)) / net_odds, 0.0)
+    fractional = full_kelly * KELLY_FRACTION
+    stake_fraction = min(fractional, cap)
+    return {
+        "full_kelly": round(full_kelly, 4),
+        "fraction": KELLY_FRACTION,
+        "fractional_kelly": round(fractional, 4),
+        "confidence_cap": cap,
+        "stake_fraction": round(stake_fraction, 4),
+        "stake_units": round(stake_fraction * bankroll_units, 2),
+        "bankroll_units": bankroll_units,
+    }
+
+
+def _normal_cdf(value: float) -> float:
+    return 0.5 * (1 + math.erf(value / math.sqrt(2)))
+
+
+def build_prop_edge(expected_points: float, points_range: dict, prop: dict, confidence_band: str) -> dict:
+    """Compare a player projection with a real over/under line."""
+    line = float(prop["line"])
+    over_odds = int(prop["over_odds"])
+    under_odds = int(prop["under_odds"])
+    sigma = max((points_range["high"] - points_range["low"]) / 2.56, expected_points * 0.12, 0.5)
+    probability_over = clamp(1 - _normal_cdf((line - expected_points) / sigma), 0.01, 0.99)
+    implied_over = american_to_implied_probability(over_odds)
+    implied_under = american_to_implied_probability(under_odds)
+    edge_over = probability_over - implied_over
+    edge_under = (1 - probability_over) - implied_under
+    if edge_over >= BET_EDGE_THRESHOLD and edge_over >= edge_under:
+        action, probability, implied, edge, odds = "over", probability_over, implied_over, edge_over, over_odds
+    elif edge_under >= BET_EDGE_THRESHOLD:
+        action, probability, implied, edge, odds = "under", 1 - probability_over, implied_under, edge_under, under_odds
+    else:
+        best_is_over = edge_over >= edge_under
+        action = "pass"
+        probability = probability_over if best_is_over else 1 - probability_over
+        implied = implied_over if best_is_over else implied_under
+        edge = edge_over if best_is_over else edge_under
+        odds = over_odds if best_is_over else under_odds
+    kelly = kelly_stake(probability if action != "pass" else None, odds, confidence_band)
+    return {
+        "market": prop.get("market", "player_points"),
+        "line": round(line, 1),
+        "over_odds": over_odds,
+        "under_odds": under_odds,
+        "projection": round(expected_points, 1),
+        "projection_sigma": round(sigma, 2),
+        "probability_over": round(probability_over, 3),
+        "probability_under": round(1 - probability_over, 3),
+        "edge_over": round(edge_over, 3),
+        "edge_under": round(edge_under, 3),
+        "recommended_action": action,
+        "model_probability": round(probability, 3),
+        "implied_probability": round(implied, 3),
+        "edge": round(edge, 3),
+        "bet_odds": odds,
+        "kelly": kelly,
+        "bookmakers": prop.get("bookmakers"),
+        "event_id": prop.get("event_id"),
+        "source_mode": prop.get("source_mode", "override"),
+    }
+
+
+def platt_calibrate(probability: float, calibrator: dict) -> float:
+    probability = clamp(probability, 1e-4, 1 - 1e-4)
+    logit = math.log(probability / (1 - probability))
+    return clamp(1 / (1 + math.exp(-(calibrator["a"] * logit + calibrator["b"]))), 0.02, 0.98)
+
+
+def apply_probability_calibration(payload: dict, calibrator: dict | None) -> dict:
+    """Recalibrate the game win probability and re-derive edge, action, and Kelly stake."""
+    betting_edge = payload["betting_edge"]
+    raw_probability = payload["team_prediction"]["win_probability"]
+    implied_probability = payload["market_signals"]["implied_probability"]
+    if calibrator:
+        calibrated_probability = platt_calibrate(raw_probability, calibrator)
+        edge = calibrated_probability - implied_probability
+        if edge >= BET_EDGE_THRESHOLD and betting_edge["edge_quality_score"] >= BET_QUALITY_THRESHOLD:
+            action = "bet"
+        elif edge <= -BET_EDGE_THRESHOLD:
+            action = "avoid"
+        else:
+            action = "hold"
+        betting_edge["raw_edge"] = betting_edge["edge"]
+        betting_edge["edge"] = round(edge, 3)
+        betting_edge["recommended_action"] = action
+        betting_edge["recommended_stake"] = _recommended_stake(edge, betting_edge["edge_quality_score"])
+        betting_edge["calibration"] = {
+            **betting_edge["calibration"],
+            "mode": "platt_scaling",
+            "a": round(calibrator["a"], 4),
+            "b": round(calibrator["b"], 4),
+            "samples": calibrator.get("samples"),
+            "raw_probability": raw_probability,
+        }
+    else:
+        calibrated_probability = raw_probability
+    betting_edge["calibrated_probability"] = round(calibrated_probability, 3)
+    betting_edge["kelly"] = kelly_stake(
+        calibrated_probability if betting_edge["recommended_action"] == "bet" else None,
+        payload["market_signals"]["current_odds"],
+        payload["team_prediction"]["confidence_band"],
+    )
+    return payload
 
 
 def american_to_implied_probability(american_odds: int) -> float:
@@ -504,7 +626,7 @@ def build_game_edge(game_id: str, sports_data: dict | None = None, odds_data: di
     expected_points_range = _range(expected_points * (1 - variance * 0.25), expected_points, expected_points * (1 + variance * 0.25), 0.0)
     calibration = _calibration_proxy(model_confidence, variance, edge_quality_score)
 
-    return {
+    return apply_probability_calibration({
         "game_id": game_id,
         "sources": ["SportsDataIO", "Media & Broadcast", "Fantasy Sports API", "The Odds API"],
         "team_prediction": {
@@ -564,7 +686,7 @@ def build_game_edge(game_id: str, sports_data: dict | None = None, odds_data: di
                 }
             ),
         },
-    }
+    }, None)
 
 
 def _recommended_stake(edge: float, edge_quality_score: float) -> str:
