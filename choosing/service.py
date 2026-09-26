@@ -143,11 +143,53 @@ class PredictionService:
         payload["betting_edge"]["recommended_stake"] = _recommended_stake(payload["betting_edge"]["edge"])
         return payload
 
-    def search_players(self, query: str = "", team: str | None = None) -> list[dict]:
-        return search_players(query, team)
+    def search_players(self, query: str = "", team: str | None = None, sport: str | None = None) -> list[dict]:
+        return search_players(query, team, sport)
 
     def search_teams(self, query: str = "") -> list[dict]:
         return search_teams(query)
+
+    def get_top_players_summary(self, sport: str | None = None, limit: int = 10) -> dict:
+        selected_sport = resolve_player_sport(sport)
+        players = self.search_players(sport=selected_sport["odds_api_key"])
+        if len(players) < limit:
+            players.extend(_synthetic_players_for_sport(selected_sport, limit - len(players)))
+        summaries = []
+        for entry in players[:limit]:
+            prediction = self.get_player_prediction(
+                entry["name"],
+                {
+                    "team": entry.get("team"),
+                    "sport": selected_sport["odds_api_key"],
+                },
+            )
+            summaries.append(
+                {
+                    "player_id": prediction["player_id"],
+                    "player_name": prediction["player_name"],
+                    "team": prediction["team"],
+                    "sport": prediction["sport"],
+                    "expected_points": prediction["predictions"]["expected_points"],
+                    "expected_performance": prediction["predictions"]["expected_performance"],
+                    "scoring_outlook": prediction["predictions"]["scoring_outlook"],
+                    "availability_probability": prediction["predictions"]["availability_probability"],
+                    "underperformance_risk": prediction["predictions"]["underperformance_risk"],
+                    "player_profile": prediction["player_profile"],
+                }
+            )
+        summaries.sort(
+            key=lambda item: (item["expected_performance"], item["expected_points"], item["availability_probability"]),
+            reverse=True,
+        )
+        return {
+            "sport": selected_sport,
+            "top_players": summaries[:limit],
+            "summary": {
+                "requested_limit": limit,
+                "returned": min(limit, len(summaries)),
+                "ranking_basis": "expected_performance",
+            },
+        }
 
     def source_status(self) -> dict:
         return {
@@ -234,3 +276,17 @@ def _odds_api_catalog() -> dict:
         "endpoints": [dict(entry) for entry in ODDS_API_ENDPOINTS],
         "sports": [dict(entry) for entry in ODDS_API_SPORTS],
     }
+
+
+def _synthetic_players_for_sport(sport: dict, count: int) -> list[dict]:
+    synthetic = []
+    for index in range(count):
+        synthetic.append(
+            {
+                "id": f"{sport['odds_api_key']}-{index + 1}",
+                "name": f"{sport['league']} Featured Player {index + 1}",
+                "team": f"{sport['league']} Select",
+                "sport_key": sport["odds_api_key"],
+            }
+        )
+    return synthetic

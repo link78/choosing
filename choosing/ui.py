@@ -20,6 +20,7 @@ def app_metadata() -> dict:
         "endpoints": {
             "health": "/health",
             "player_prediction": "/player/{id}/prediction",
+            "top_players": "/players/top?sport={sport_key}&limit=10",
             "game_edge": "/game/{id}/edge",
             "player_lookup": "/lookup/players?query={name}",
             "team_lookup": "/lookup/teams?query={team}",
@@ -278,6 +279,20 @@ def render_home_page() -> str:
         </form>
         <div id="game-result" class="result muted">Waiting for a game lookup.</div>
       </article>
+
+      <article class="card">
+        <h2>Top players by sport</h2>
+        <p class="muted">Summarize the top 10 players for a selected sport using predicted performance and scoring outlook.</p>
+        <form id="top-players-form">
+          <label>Sport
+            <select id="top-players-sport" name="top-players-sport">
+              {player_sport_options}
+            </select>
+          </label>
+          <button type="submit">Load top players</button>
+        </form>
+        <div id="top-players-result" class="result muted">Waiting for a sport summary.</div>
+      </article>
     </section>
 
     <section class="cards">
@@ -359,6 +374,38 @@ def render_home_page() -> str:
       `;
     }}
 
+    function topPlayersMarkup(payload) {{
+      return `
+        <div class="profile-stack">
+          <div class="profile-panel">
+            <h3>Top players · ${{payload.sport.league}}</h3>
+            <div class="metric-grid">
+              <div class="metric"><strong>Sport</strong><br>${{payload.sport.name}}</div>
+              <div class="metric"><strong>League</strong><br>${{payload.sport.league}}</div>
+              <div class="metric"><strong>Returned</strong><br>${{payload.summary.returned}}</div>
+              <div class="metric"><strong>Ranking</strong><br>${{payload.summary.ranking_basis}}</div>
+            </div>
+          </div>
+          <div class="profile-panel">
+            <h3>Player summary</h3>
+            <div class="metric-grid">
+              ${{
+                payload.top_players.map((player) => `
+                  <div class="metric">
+                    <strong>${{player.player_name}}</strong><br>
+                    ${{player.team}} · ${{player.sport.league}}<br>
+                    Performance: ${{player.expected_performance}}<br>
+                    Points: ${{player.expected_points}}<br>
+                    Outlook: ${{player.scoring_outlook}}
+                  </div>
+                `).join("")
+              }}
+            </div>
+          </div>
+        </div>
+      `;
+    }}
+
     function gameMarkup(payload) {{
       return `
         <div class="metric-grid">
@@ -405,8 +452,22 @@ def render_home_page() -> str:
       target.innerHTML = response.ok ? gameMarkup(payload) : `<span class="danger">${{payload.error || "Request failed"}}</span>`;
     }}
 
+    async function loadTopPlayers(event) {{
+      event.preventDefault();
+      const target = byId("top-players-result");
+      target.textContent = "Loading top players...";
+      const sport = byId("top-players-sport").value.trim();
+      const params = new URLSearchParams();
+      if (sport) params.set("sport", sport);
+      params.set("limit", "10");
+      const response = await fetch(`/players/top?${{params.toString()}}`);
+      const payload = await response.json();
+      target.innerHTML = response.ok ? topPlayersMarkup(payload) : `<span class="danger">${{payload.error || "Request failed"}}</span>`;
+    }}
+
     byId("player-form").addEventListener("submit", loadPlayer);
     byId("game-form").addEventListener("submit", loadGame);
+    byId("top-players-form").addEventListener("submit", loadTopPlayers);
   </script>
 </body>
 </html>"""

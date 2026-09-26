@@ -139,7 +139,13 @@ def app(environ, start_response):
         return json_response(
             start_response,
             "200 OK",
-            {"players": service.search_players(query.get("query", [""])[0], query.get("team", [None])[0])},
+            {
+                "players": service.search_players(
+                    query.get("query", [""])[0],
+                    query.get("team", [None])[0],
+                    query.get("sport", [None])[0],
+                )
+            },
         )
 
     if path == "/lookup/teams":
@@ -155,6 +161,17 @@ def app(environ, start_response):
             "200 OK",
             {"status": "ok", "sources": service.source_status()},
         )
+
+    if path == "/players/top":
+        sport = query.get("sport", [None])[0]
+        raw_limit = query.get("limit", ["10"])[0]
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            return json_response(start_response, "400 Bad Request", {"error": "limit must be an integer"})
+        if not 1 <= limit <= 25:
+            return json_response(start_response, "400 Bad Request", {"error": "limit must be between 1 and 25"})
+        return json_response(start_response, "200 OK", service.get_top_players_summary(sport, limit))
 
     if path.startswith("/player/") and path.endswith("/prediction"):
         player_id = unquote(path[len("/player/") : -len("/prediction")].strip("/"))

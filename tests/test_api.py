@@ -46,6 +46,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn('placeholder="Search player name"', response["raw_body"])
         self.assertIn('placeholder="Search team name"', response["raw_body"])
         self.assertIn('id="player-sport"', response["raw_body"])
+        self.assertIn('id="top-players-sport"', response["raw_body"])
+        self.assertIn("Top players by sport", response["raw_body"])
         self.assertIn("americanfootball_nfl", response["raw_body"])
         self.assertIn("Player profile", response["raw_body"])
         self.assertIn("Injury status", response["raw_body"])
@@ -75,6 +77,7 @@ class PredictionApiTests(unittest.TestCase):
         )
         self.assertEqual(response["body"]["upstream_sports"]["the_odds_api"][0]["name"], "NFL")
         self.assertEqual(response["body"]["upstream_sports"]["the_odds_api"][-1]["name"], "Olympics")
+        self.assertEqual(response["body"]["endpoints"]["top_players"], "/players/top?sport={sport_key}&limit=10")
         self.assertEqual(response["body"]["endpoints"]["game_edge"], "/game/{id}/edge")
 
     def test_health_endpoint_reports_source_modes(self):
@@ -208,6 +211,24 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["source_snapshots"]["sports_data_io"]["availability"], 0.95)
         self.assertGreater(response["body"]["predictions"]["expected_points"], 0)
 
+    def test_top_players_endpoint_returns_ranked_players_for_selected_sport(self):
+        response = request("/players/top?sport=basketball_nba&limit=10")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["body"]["sport"]["league"], "NBA")
+        self.assertEqual(response["body"]["summary"]["returned"], 10)
+        self.assertEqual(len(response["body"]["top_players"]), 10)
+        self.assertGreaterEqual(
+            response["body"]["top_players"][0]["expected_performance"],
+            response["body"]["top_players"][-1]["expected_performance"],
+        )
+
+    def test_top_players_endpoint_rejects_invalid_limit(self):
+        response = request("/players/top?limit=abc")
+
+        self.assertEqual(response["status"], "400 Bad Request")
+        self.assertEqual(response["body"]["error"], "limit must be an integer")
+
     def test_game_edge_endpoint_uses_model_probability_and_odds_query_params(self):
         response = request("/game/Golden%20State%20Warriors/edge?model_probability=0.61&odds=-110")
 
@@ -265,10 +286,13 @@ class PredictionApiTests(unittest.TestCase):
 
     def test_lookup_endpoints_return_player_and_team_matches(self):
         player_response = request("/lookup/players?query=curry")
+        sport_filtered_player_response = request("/lookup/players?query=mahomes&sport=americanfootball_nfl")
         team_response = request("/lookup/teams?query=warriors")
 
         self.assertEqual(player_response["status"], "200 OK")
         self.assertEqual(player_response["body"]["players"][0]["name"], "Stephen Curry")
+        self.assertEqual(sport_filtered_player_response["status"], "200 OK")
+        self.assertEqual(sport_filtered_player_response["body"]["players"][0]["name"], "Patrick Mahomes")
         self.assertEqual(team_response["status"], "200 OK")
         self.assertEqual(team_response["body"]["teams"][0]["team"], "Golden State Warriors")
 

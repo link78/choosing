@@ -12,10 +12,22 @@ from .prediction import clamp, stable_float
 
 
 PLAYER_DIRECTORY = [
-    {"id": "42", "name": "Luka Doncic", "team": "Dallas Mavericks", "aliases": ["luka", "doncic"]},
-    {"id": "7", "name": "Kevin Durant", "team": "Phoenix Suns", "aliases": ["durant", "kd"]},
-    {"id": "15", "name": "Nikola Jokic", "team": "Denver Nuggets", "aliases": ["jokic", "nikola"]},
-    {"id": "30", "name": "Stephen Curry", "team": "Golden State Warriors", "aliases": ["curry", "steph"]},
+    {"id": "42", "name": "Luka Doncic", "team": "Dallas Mavericks", "sport_key": "basketball_nba", "aliases": ["luka", "doncic"]},
+    {"id": "7", "name": "Kevin Durant", "team": "Phoenix Suns", "sport_key": "basketball_nba", "aliases": ["durant", "kd"]},
+    {"id": "15", "name": "Nikola Jokic", "team": "Denver Nuggets", "sport_key": "basketball_nba", "aliases": ["jokic", "nikola"]},
+    {"id": "30", "name": "Stephen Curry", "team": "Golden State Warriors", "sport_key": "basketball_nba", "aliases": ["curry", "steph"]},
+    {"id": "34", "name": "Giannis Antetokounmpo", "team": "Milwaukee Bucks", "sport_key": "basketball_nba", "aliases": ["giannis", "antetokounmpo"]},
+    {"id": "35", "name": "Jayson Brunson", "team": "New York Knicks", "sport_key": "basketball_nba", "aliases": ["brunson", "jalen"]},
+    {"id": "36", "name": "Shai Gilgeous-Alexander", "team": "Oklahoma City Thunder", "sport_key": "basketball_nba", "aliases": ["shai", "gilgeous"]},
+    {"id": "37", "name": "Anthony Edwards", "team": "Minnesota Timberwolves", "sport_key": "basketball_nba", "aliases": ["edwards", "ant"]},
+    {"id": "38", "name": "LeBron James", "team": "Los Angeles Lakers", "sport_key": "basketball_nba", "aliases": ["lebron", "james"]},
+    {"id": "39", "name": "Devin Booker", "team": "Phoenix Suns", "sport_key": "basketball_nba", "aliases": ["booker", "devin"]},
+    {"id": "101", "name": "Patrick Mahomes", "team": "Kansas City Chiefs", "sport_key": "americanfootball_nfl", "aliases": ["mahomes", "patrick"]},
+    {"id": "102", "name": "Josh Allen", "team": "Buffalo Bills", "sport_key": "americanfootball_nfl", "aliases": ["allen", "josh"]},
+    {"id": "103", "name": "Christian McCaffrey", "team": "San Francisco 49ers", "sport_key": "americanfootball_nfl", "aliases": ["mccaffrey", "christian"]},
+    {"id": "201", "name": "Shohei Ohtani", "team": "Los Angeles Dodgers", "sport_key": "baseball_mlb", "aliases": ["ohtani", "shohei"]},
+    {"id": "202", "name": "Aaron Judge", "team": "New York Yankees", "sport_key": "baseball_mlb", "aliases": ["judge", "aaron"]},
+    {"id": "301", "name": "Connor McDavid", "team": "Edmonton Oilers", "sport_key": "icehockey_nhl", "aliases": ["mcdavid", "connor"]},
 ]
 
 TEAM_DIRECTORY = [
@@ -100,9 +112,10 @@ def _http_get_json(url: str, headers: dict[str, str] | None = None, timeout: flo
         return json.loads(response.read().decode("utf-8"))
 
 
-def search_players(query: str = "", team: str | None = None) -> list[dict]:
+def search_players(query: str = "", team: str | None = None, sport: str | None = None) -> list[dict]:
     normalized_query = _normalize(query)
     normalized_team = _normalize(team or "")
+    normalized_sport = _normalize(sport or "")
     results = []
     for entry in PLAYER_DIRECTORY:
         searchable = [_normalize(entry["id"]), _normalize(entry["name"]), _normalize(entry["team"])]
@@ -111,7 +124,16 @@ def search_players(query: str = "", team: str | None = None) -> list[dict]:
             continue
         if normalized_team and normalized_team not in _normalize(entry["team"]):
             continue
-        results.append({"id": entry["id"], "name": entry["name"], "team": entry["team"]})
+        if normalized_sport and normalized_sport not in _normalize(entry.get("sport_key", "")):
+            continue
+        results.append(
+            {
+                "id": entry["id"],
+                "name": entry["name"],
+                "team": entry["team"],
+                "sport_key": entry.get("sport_key", "basketball_nba"),
+            }
+        )
     return results
 
 
@@ -133,14 +155,15 @@ def search_teams(query: str = "") -> list[dict]:
     return results
 
 
-def _resolve_local_player(player_reference: str, team: str | None = None) -> dict:
-    matches = search_players(player_reference, team)
+def _resolve_local_player(player_reference: str, team: str | None = None, sport: str | None = None) -> dict:
+    matches = search_players(player_reference, team, sport)
     if matches:
         return matches[0]
     return {
         "id": _slugify(player_reference),
         "name": _titleize(player_reference),
         "team": _titleize(team) if team else "Open Market",
+        "sport_key": sport or "basketball_nba",
     }
 
 
@@ -183,7 +206,7 @@ class SportsDataIOClient:
 
     def fetch_player_context(self, player_id: str, overrides: dict | None = None) -> dict:
         overrides = overrides or {}
-        player = self.resolve_player(player_id, overrides.get("team"))
+        player = self.resolve_player(player_id, overrides.get("team"), overrides.get("sport"))
         injury_risk = overrides.get("injury_risk", stable_float(f"{player['id']}:injury", 0.05, 0.55))
         payload = {
             "player_id": player["id"],
@@ -242,12 +265,12 @@ class SportsDataIOClient:
             payload["source_mode"] = "fallback"
         return payload
 
-    def resolve_player(self, player_reference: str, team: str | None = None) -> dict:
+    def resolve_player(self, player_reference: str, team: str | None = None, sport: str | None = None) -> dict:
         if self.api_key:
             live_match = self._resolve_live_player(player_reference, team)
             if live_match:
                 return live_match
-        return _resolve_local_player(player_reference, team)
+        return _resolve_local_player(player_reference, team, sport)
 
     def resolve_team(self, team_reference: str) -> dict:
         if self.api_key:
@@ -580,7 +603,7 @@ class MediaBroadcastClient:
 
     def fetch_player_context(self, player_id: str, overrides: dict | None = None) -> dict:
         overrides = overrides or {}
-        player = _resolve_local_player(player_id, overrides.get("team"))
+        player = _resolve_local_player(player_id, overrides.get("team"), overrides.get("sport"))
         payload = {
             "player_id": player["id"],
             "player_name": player["name"],
@@ -729,7 +752,7 @@ class FantasySportsAPIClient:
 
     def fetch_player_context(self, player_id: str, overrides: dict | None = None) -> dict:
         overrides = overrides or {}
-        player = _resolve_local_player(player_id, overrides.get("team"))
+        player = _resolve_local_player(player_id, overrides.get("team"), overrides.get("sport"))
         payload = {
             "player_id": player["id"],
             "player_name": player["name"],
