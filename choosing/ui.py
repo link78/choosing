@@ -310,6 +310,8 @@ def render_home_page() -> str:
     }}
 
     function playerMarkup(payload) {{
+      const predictionEndpoints = payload.predictions.odds_api_endpoints || [];
+      const profileSports = payload.player_profile.odds_api_coverage?.sports || [];
       return `
         <div class="profile-stack">
           <div class="profile-panel">
@@ -317,12 +319,16 @@ def render_home_page() -> str:
             <div class="metric-grid">
               <div class="metric"><strong>Player</strong><br>${{payload.player_name}}</div>
               <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
+              <div class="metric"><strong>Sport</strong><br>${{payload.sport.name}} · ${{payload.sport.league}}</div>
               <div class="metric"><strong>Minutes</strong><br>${{payload.predictions.expected_minutes}}</div>
               <div class="metric"><strong>Points</strong><br>${{payload.predictions.expected_points}}</div>
               <div class="metric"><strong>Scoring outlook</strong><br>${{payload.predictions.scoring_outlook}}</div>
               <div class="metric"><strong>Performance</strong><br>${{payload.predictions.expected_performance}}</div>
               <div class="metric"><strong>Availability</strong><br>${{payload.predictions.availability_probability}}</div>
               <div class="metric"><strong>Underperformance risk</strong><br>${{payload.predictions.underperformance_risk}}</div>
+            </div>
+            <div class="metric-grid">
+              ${{predictionEndpoints.length ? listMarkup(predictionEndpoints, 'path') : '<div class="metric"><strong>Odds API endpoints</strong><br>No data</div>'}}
             </div>
           </div>
           <div class="profile-panel">
@@ -333,19 +339,11 @@ def render_home_page() -> str:
               <div class="metric"><strong>Readiness score</strong><br>${{payload.player_profile.readiness_score}}</div>
               <div class="metric"><strong>Risk level</strong><br>${{payload.player_profile.risk_level}}</div>
               <div class="metric"><strong>Role</strong><br>${{payload.player_profile.projected_role}}</div>
+              <div class="metric"><strong>Sport profile</strong><br>${{payload.player_profile.sport.name}} · ${{payload.player_profile.sport.league}}</div>
               <div class="metric"><strong>Data mode</strong><br>${{payload.player_profile.computation_data.source_mode}}</div>
             </div>
-          </div>
-          <div class="profile-panel">
-            <h3>Odds API endpoint data</h3>
             <div class="metric-grid">
-              ${{listMarkup(payload.odds_api_catalog.endpoints, 'path')}}
-            </div>
-          </div>
-          <div class="profile-panel">
-            <h3>Odds API sports coverage</h3>
-            <div class="metric-grid">
-              ${{listMarkup(payload.player_profile.odds_api_coverage.sports, 'key')}}
+              ${{profileSports.length ? listMarkup(profileSports, 'key') : '<div class="metric"><strong>Odds API sports</strong><br>No data</div>'}}
             </div>
           </div>
         </div>

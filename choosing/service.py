@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .catalog import ODDS_API_ENDPOINTS, ODDS_API_SPORTS
+from .catalog import ODDS_API_ENDPOINTS, ODDS_API_SPORTS, PLAYER_SPORT
 from .data_sources import (
     FantasySportsAPIClient,
     MediaBroadcastClient,
@@ -46,9 +46,11 @@ class PredictionService:
         payload["meta"] = self._meta(sports_data["player_id"], "player")
         payload["player_name"] = sports_data["player_name"]
         payload["team"] = sports_data["team"]
+        payload["sport"] = dict(PLAYER_SPORT)
         payload["injury_status"] = sports_data.get("injury_status", "Unknown")
         payload["player_profile"] = _build_player_profile(payload, player_inputs)
         payload["odds_api_catalog"] = _odds_api_catalog()
+        payload["predictions"]["odds_api_endpoints"] = _odds_api_catalog()["endpoints"]
         payload["source_snapshots"] = {
             "sports_data_io": {
                 "mode": sports_data.get("source_mode", "fallback"),
@@ -199,6 +201,7 @@ def _build_player_profile(prediction: dict, sports_data: dict) -> dict:
         "scoring_band": scoring_band,
         "risk_level": risk_level,
         "projected_role": "Featured scorer" if expected_minutes >= 32 or expected_points >= 24 else "Rotation scorer",
+        "sport": dict(PLAYER_SPORT),
         "injury_status": sports_data.get("injury_status", "Unknown"),
         "odds_api_coverage": _odds_api_catalog(),
         "computation_data": {

@@ -55,6 +55,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("The Odds API sports", response["raw_body"])
         self.assertIn("NFL", response["raw_body"])
         self.assertIn("Olympics", response["raw_body"])
+        self.assertIn("Sport", response["raw_body"])
+        self.assertIn("Sport profile", response["raw_body"])
 
     def test_app_metadata_endpoint_returns_machine_readable_json(self):
         response = request("/app.json")
@@ -158,6 +160,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("injury_status", response["body"]["player_profile"])
         self.assertIn("player_name", response["body"])
         self.assertIn("team", response["body"])
+        self.assertEqual(response["body"]["sport"]["name"], "Basketball")
+        self.assertEqual(response["body"]["sport"]["league"], "NBA")
         self.assertIn("media_broadcast_signals", response["body"])
         self.assertIn("fantasy_sports_signals", response["body"])
         self.assertIn("media_broadcast", response["body"]["source_snapshots"])
@@ -165,6 +169,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("odds_api", response["body"]["source_snapshots"])
         self.assertEqual(response["body"]["odds_api_catalog"]["provider"], "The Odds API")
         self.assertEqual(response["body"]["odds_api_catalog"]["sports"][0]["name"], "NFL")
+        self.assertEqual(response["body"]["predictions"]["odds_api_endpoints"][0]["path"], "/sports")
+        self.assertEqual(response["body"]["player_profile"]["sport"]["league"], "NBA")
         self.assertEqual(response["body"]["player_profile"]["odds_api_coverage"]["sports"][-1]["name"], "Olympics")
         self.assertEqual(
             response["body"]["player_profile"]["computation_data"]["odds_api_endpoints"][1]["path"],

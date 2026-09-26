@@ -45,10 +45,13 @@ class BettingApplicationTests(unittest.TestCase):
 
         self.assertEqual(report["player_cards"][0]["player_id"], "30")
         self.assertEqual(report["player_cards"][0]["player_name"], "Stephen Curry")
+        self.assertEqual(report["player_cards"][0]["team"], "Golden State Warriors")
+        self.assertEqual(report["player_cards"][0]["sport"]["league"], "NBA")
         self.assertIn(report["player_cards"][0]["scoring_outlook"], {"Likely to score", "Not likely to score"})
         self.assertIn("player_profile", report["player_cards"][0])
         self.assertIn("readiness_score", report["player_cards"][0]["player_profile"])
         self.assertIn("injury_status", report["player_cards"][0]["player_profile"])
+        self.assertEqual(report["player_cards"][0]["player_profile"]["sport"]["league"], "NBA")
         self.assertEqual(report["player_cards"][0]["player_profile"]["odds_api_coverage"]["sports"][0]["name"], "NFL")
         self.assertGreaterEqual(
             report["player_cards"][0]["player_profile"]["computation_data"]["fantasy_value_rating"],
@@ -69,6 +72,8 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertIn("points", rendered)
         self.assertRegex(rendered, r"likely to score|not likely to score")
         self.assertIn("Stephen Curry", rendered)
+        self.assertIn("Golden State Warriors", rendered)
+        self.assertIn("NBA Basketball", rendered)
         self.assertIn("BETTING OPPORTUNITIES", rendered)
         self.assertIn("PORTFOLIO SUMMARY", rendered)
 

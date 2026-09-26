@@ -73,6 +73,8 @@ class BettingApplication:
         return {
             "player_id": prediction["player_id"],
             "player_name": prediction["player_name"],
+            "team": prediction["team"],
+            "sport": prediction["sport"],
             "expected_minutes": prediction["predictions"]["expected_minutes"],
             "expected_points": prediction["predictions"]["expected_points"],
             "expected_performance": prediction["predictions"]["expected_performance"],
@@ -80,6 +82,7 @@ class BettingApplication:
             "underperformance_risk": prediction["predictions"]["underperformance_risk"],
             "likely_to_score": prediction["predictions"]["likely_to_score"],
             "scoring_outlook": prediction["predictions"]["scoring_outlook"],
+            "odds_api_endpoints": prediction["predictions"]["odds_api_endpoints"],
             "player_profile": prediction["player_profile"],
             "flags": flags,
         }
@@ -116,7 +119,8 @@ def render_text_report(report: dict) -> str:
     for player in report["player_cards"]:
         flags = ", ".join(player["flags"]) if player["flags"] else "stable"
         lines.append(
-            f"- Player {player['player_name']} ({player['player_id']}): minutes {player['expected_minutes']}, "
+            f"- Player {player['player_name']} ({player['player_id']}, {player['team']}, "
+            f"{player['sport']['league']} {player['sport']['name']}): minutes {player['expected_minutes']}, "
             f"points {player['expected_points']}, {player['scoring_outlook'].lower()}, "
             f"performance {player['expected_performance']}, flags {flags}"
         )

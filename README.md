@@ -43,7 +43,7 @@ The repository still includes the underlying HTTP prediction utilities:
 
 - `GET /player/{id}/prediction` supports player ids or player names, plus optional `team=...`, and includes predicted points
   and a computed `player_profile`
-  with injury status, computation/source details, and embedded The Odds API endpoint and sport coverage data
+  with team, sport, injury status, computation/source details, and embedded The Odds API endpoint and sport coverage data
 - `GET /game/{id}/edge` supports game ids or team names
 - `GET /lookup/players?query={name}`
 - `GET /lookup/teams?query={team}`

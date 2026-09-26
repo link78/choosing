@@ -1,3 +1,10 @@
+PLAYER_SPORT = {
+    "name": "Basketball",
+    "league": "NBA",
+    "odds_api_key": "basketball_nba",
+}
+
+
 ODDS_API_ENDPOINTS = [
     {"name": "Sports list", "path": "/sports"},
     {"name": "Current odds", "path": "/sports/{sport}/odds"},
