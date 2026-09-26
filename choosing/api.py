@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, unquote
 from .elo import TENNIS_SURFACES, normalize_surface
 from .grading import parse_grade_date
 from .metrics import BREAKDOWN_DIMENSIONS, TIMESERIES_WINDOWS
+from .mlb_props import MLBLookupError, MLBPropModel, reference_data as mlb_reference_data
 from .service import PredictionService
 from .ui import app_metadata, render_home_page
 
@@ -75,6 +76,30 @@ GAME_FLOAT_FIELDS = {
 }
 MAX_TRAVEL_MILES = 10000
 MAX_NAME_LENGTH = 100
+
+MLB_PROP_RANGES = {
+    "wind_out_mph": (-40.0, 40.0),
+    "temperature_f": (20.0, 115.0),
+    "humidity": (0.0, 100.0),
+    "park_hr_factor": (0.5, 1.6),
+    "park_tb_factor": (0.5, 1.6),
+    "pitcher_hr9": (0.0, 5.0),
+    "league_hr9": (0.3, 3.0),
+    "expected_pa": (1.0, 7.0),
+    "tb_line": (0.0, 10.0),
+    "season_hr": (0, 80),
+    "season_pa": (1, 800),
+    "l10_hr": (0, 20),
+    "l10_pa": (0, 80),
+    "l10_tb": (0, 80),
+    "lineup_slot": (1, 9),
+}
+MLB_PROP_FLOAT_FIELDS = {
+    "wind_out_mph", "temperature_f", "humidity", "park_hr_factor", "park_tb_factor",
+    "pitcher_hr9", "league_hr9", "expected_pa", "tb_line",
+}
+MLB_PROP_INT_FIELDS = {"season_hr", "season_pa", "l10_hr", "l10_pa", "l10_tb", "lineup_slot"}
+MLB_PROP_ODDS_FIELDS = {"hr_odds", "hr_no_odds", "tb_over_odds", "tb_under_odds"}
 
 GAME_INT_FIELDS = {"opening_odds", "current_odds", "odds"}
 GAME_BOOL_FIELDS = {"steam_move"}
@@ -320,6 +345,57 @@ def app(environ, start_response):
             "200 OK",
             {"status": "ok", "sources": service.source_status()},
         )
+
+    if path == "/mlb/reference":
+        return json_response(start_response, "200 OK", mlb_reference_data())
+
+    if path == "/mlb/props":
+        player = query.get("player", [""])[0].strip()
+        pitcher = query.get("pitcher", [""])[0].strip() or None
+        park = query.get("park", [""])[0].strip() or None
+        if not player:
+            return json_response(start_response, "400 Bad Request", {"error": "player is required"})
+        for label, value in (("player", player), ("pitcher", pitcher), ("park", park)):
+            if value and len(value) > MAX_NAME_LENGTH:
+                return json_response(
+                    start_response, "400 Bad Request", {"error": f"{label} must be at most {MAX_NAME_LENGTH} characters"}
+                )
+        overrides, errors = _parse_overrides(query, MLB_PROP_FLOAT_FIELDS, float, "must be numeric")
+        int_overrides, int_errors = _parse_overrides(query, MLB_PROP_INT_FIELDS, int, "must be an integer")
+        odds_overrides, odds_errors = _parse_overrides(query, MLB_PROP_ODDS_FIELDS, int, "must be an integer American line")
+        errors.update(int_errors)
+        errors.update(odds_errors)
+        if errors:
+            return json_response(start_response, "400 Bad Request", {"errors": errors})
+        overrides.update(int_overrides)
+        for field, value in overrides.items():
+            minimum, maximum = MLB_PROP_RANGES[field]
+            if not minimum <= value <= maximum:
+                return json_response(
+                    start_response, "400 Bad Request", {"error": f"{field} must be between {minimum} and {maximum}"}
+                )
+        for field, value in odds_overrides.items():
+            if not 100 <= abs(value) <= 100000:
+                return json_response(start_response, "400 Bad Request", {"error": f"{field} must be an American line of at least +/-100"})
+        overrides.update(odds_overrides)
+        if ("hr_no_odds" in overrides and "hr_odds" not in overrides) or (
+            "tb_under_odds" in overrides and "tb_over_odds" not in overrides
+        ):
+            return json_response(start_response, "400 Bad Request", {"error": "provide the over/yes price with the under/no price"})
+        if "roof_closed" in query:
+            try:
+                overrides["roof_closed"] = _parse_bool(query["roof_closed"][0])
+            except ValueError:
+                return json_response(start_response, "400 Bad Request", {"error": "roof_closed must be a boolean"})
+        try:
+            payload = MLBPropModel(service.sports_client, service.odds_client).project(player, pitcher, park, overrides)
+        except MLBLookupError:
+            return json_response(start_response, "404 Not Found", {"error": "player, pitcher, or park not found"})
+        except ValueError:
+            return json_response(start_response, "400 Bad Request", {"error": "invalid MLB prop request"})
+        except Exception:
+            return json_response(start_response, "500 Internal Server Error", {"error": "unable to project MLB props"})
+        return json_response(start_response, "200 OK", payload)
 
     if path == "/players/top":
         sport = query.get("sport", [None])[0]

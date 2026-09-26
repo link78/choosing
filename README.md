@@ -48,6 +48,8 @@ The repository still includes the underlying HTTP prediction utilities:
 - `GET /players/top?sport={sport_key}&limit=10` summarizes the top predicted players for a selected sport and includes each player's leading suggestion
   (when `SPORTSDATAIO_API_KEY` is configured, NFL top-player candidates are pulled from the live SportsDataIO player and season-stat feeds before falling back to local samples)
 - `GET /game/{id}/edge` supports game ids or team names
+- `GET /mlb/props?player={name}&pitcher={name}&park={park}` projects MLB home run and total bases props (see below)
+- `GET /mlb/reference` lists the reference batters, pitchers, parks, and league constants used by the MLB prop model
 - `GET /backtest/summary.json` returns measured ROI, hit rate, Brier score, calibration bins, player error metrics, recent outcomes, and learned-model status
 - `POST /predictions/{prediction_id}/outcome` records actual outcomes for stored player/game predictions so backtesting can grade them over time
   (optionally with `closing_odds` to track closing line value)
@@ -210,3 +212,29 @@ Railpack / Railway compatibility:
 ```bash
 python -m unittest discover -s tests
 ```
+## MLB home run & total bases model
+
+`GET /mlb/props` (and the **MLB home run & total bases** dashboard card) combines SportsDataIO player stats,
+Statcast-style batted-ball metrics, and The Odds API prop markets (`batter_home_runs`, `batter_total_bases`).
+Every layer is returned under `steps` so the math is auditable:
+
+1. **Baseline power** – `HR_baseline = Season HR / Season PA`, plus AVG, SLG, ISO, hard-hit%, barrel%, average EV, and launch-angle mix.
+2. **Recent form** – `HR_L10 = HR / PA` and `TB_L10 = TB / games` over the last 10 games; `HR_adj = 0.7·HR_baseline + 0.3·HR_L10`.
+3. **Pitcher matchup** – `M_pitcher = Pitcher HR/9 (platoon split vs the batter's side) / League HR/9`; `HR_matchup = HR_adj · M_pitcher`.
+4. **Ballpark** – `HR_park = HR_matchup · HR park factor` (e.g. Coors 1.25, T-Mobile 0.85); a TB park factor scales non-HR hits.
+5. **Weather** – `M_weather = 1 + WindOut_mph·0.01 + (temp_f − 70)·0.005` (neutral for domes or `roof_closed=true`).
+6. **Pitch-type fit** – `M_pitchtype = Σ PitcherUsage_i·PlayerSLG_i / Σ LeagueUsage_i·PlayerSLG_i`, i.e. the player's
+   SLG against this pitcher's mix normalized by his SLG against a league-average mix (so power already in the baseline is not double counted);
+   `HR_final = HR_env · M_pitchtype` per plate appearance.
+7. **Total bases** – per-PA 1B/2B/3B rates (scaled by xBA/BA, pitcher BA-against, TB park factor, and recent TB form) plus `HR_final`
+   form an outcome distribution; `E[TB] = PA·(1·P(1B) + 2·P(2B) + 3·P(3B) + 4·P(HR))`, and `P(TB > line)` is computed exactly by convolving over expected PAs.
+8. **Market comparison** – `P_implied = 1 / decimal odds`, `Edge = P_model − P_implied` (plus a no-vig edge when both sides are priced).
+   Because books price HR props per game, `P_model` for the HR market is `1 − (1 − HR_final)^PA`, not the per-PA rate.
+
+Optional query overrides: `wind_out_mph`, `temperature_f`, `humidity`, `roof_closed`, `park_hr_factor`, `park_tb_factor`,
+`pitcher_hr9`, `league_hr9`, `season_hr`, `season_pa`, `l10_hr`, `l10_pa`, `l10_tb`, `lineup_slot` (1–9) or `expected_pa`,
+`hr_odds` / `hr_no_odds`, and `tb_line` / `tb_over_odds` / `tb_under_odds` (American odds).
+With `SPORTSDATAIO_API_KEY` set, season and last-10 totals come from SportsDataIO MLB `PlayerSeasonStats` and
+`PlayerGameStatsBySeason`; with `ODDS_API_KEY` set, live prop prices are pulled from the event odds endpoint.
+Otherwise an illustrative reference sample and a deterministic fallback market are used (`sources` reports which).
+This is information only, not betting advice.
