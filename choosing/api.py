@@ -349,6 +349,51 @@ def app(environ, start_response):
     if path == "/mlb/reference":
         return json_response(start_response, "200 OK", mlb_reference_data())
 
+    if path == "/mlb/hr-leaders":
+        team = query.get("team", [""])[0].strip() or None
+        pitcher = query.get("pitcher", [""])[0].strip() or None
+        park = query.get("park", [""])[0].strip() or None
+        for label, value in (("team", team), ("pitcher", pitcher), ("park", park)):
+            if value and len(value) > MAX_NAME_LENGTH:
+                return json_response(
+                    start_response, "400 Bad Request", {"error": f"{label} must be at most {MAX_NAME_LENGTH} characters"}
+                )
+        try:
+            limit = int(query.get("limit", ["5"])[0])
+            min_pa = int(query.get("min_pa", ["100"])[0])
+        except ValueError:
+            return json_response(start_response, "400 Bad Request", {"error": "limit and min_pa must be integers"})
+        if not 1 <= limit <= 25:
+            return json_response(start_response, "400 Bad Request", {"error": "limit must be between 1 and 25"})
+        if not 1 <= min_pa <= 800:
+            return json_response(start_response, "400 Bad Request", {"error": "min_pa must be between 1 and 800"})
+        leader_fields = {"wind_out_mph", "temperature_f", "humidity", "pitcher_hr9", "league_hr9", "expected_pa"}
+        overrides, errors = _parse_overrides(query, leader_fields, float, "must be numeric")
+        if errors:
+            return json_response(start_response, "400 Bad Request", {"errors": errors})
+        for field, value in overrides.items():
+            minimum, maximum = MLB_PROP_RANGES[field]
+            if not minimum <= value <= maximum:
+                return json_response(
+                    start_response, "400 Bad Request", {"error": f"{field} must be between {minimum} and {maximum}"}
+                )
+        if "roof_closed" in query:
+            try:
+                overrides["roof_closed"] = _parse_bool(query["roof_closed"][0])
+            except ValueError:
+                return json_response(start_response, "400 Bad Request", {"error": "roof_closed must be a boolean"})
+        try:
+            payload = MLBPropModel(service.sports_client, service.odds_client).team_home_run_leaders(
+                team, limit, pitcher, park, overrides, min_pa
+            )
+        except MLBLookupError:
+            return json_response(start_response, "404 Not Found", {"error": "team, pitcher, or park not found"})
+        except ValueError:
+            return json_response(start_response, "400 Bad Request", {"error": "invalid home run leaders request"})
+        except Exception:
+            return json_response(start_response, "500 Internal Server Error", {"error": "unable to rank home run leaders"})
+        return json_response(start_response, "200 OK", payload)
+
     if path == "/mlb/props":
         player = query.get("player", [""])[0].strip()
         pitcher = query.get("pitcher", [""])[0].strip() or None

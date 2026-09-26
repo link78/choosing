@@ -39,6 +39,18 @@ LINEUP_SLOT_PA = [4.65, 4.55, 4.45, 4.35, 4.25, 4.15, 4.05, 3.95, 3.85]
 DEFAULT_WEATHER = {"wind_out_mph": 0.0, "temperature_f": 70.0, "humidity": 50.0}
 WEATHER_BASE_TEMPERATURE_F = 70.0
 
+MLB_TEAMS = {
+    "ARI": "Arizona Diamondbacks", "ATL": "Atlanta Braves", "BAL": "Baltimore Orioles", "BOS": "Boston Red Sox",
+    "CHC": "Chicago Cubs", "CHW": "Chicago White Sox", "CIN": "Cincinnati Reds", "CLE": "Cleveland Guardians",
+    "COL": "Colorado Rockies", "DET": "Detroit Tigers", "HOU": "Houston Astros", "KC": "Kansas City Royals",
+    "LAA": "Los Angeles Angels", "LAD": "Los Angeles Dodgers", "MIA": "Miami Marlins", "MIL": "Milwaukee Brewers",
+    "MIN": "Minnesota Twins", "NYM": "New York Mets", "NYY": "New York Yankees", "OAK": "Oakland Athletics",
+    "PHI": "Philadelphia Phillies", "PIT": "Pittsburgh Pirates", "SD": "San Diego Padres", "SEA": "Seattle Mariners",
+    "SF": "San Francisco Giants", "STL": "St. Louis Cardinals", "TB": "Tampa Bay Rays", "TEX": "Texas Rangers",
+    "TOR": "Toronto Blue Jays", "WSH": "Washington Nationals",
+}
+TEAM_ALIASES = {"CWS": "CHW", "KCR": "KC", "SDP": "SD", "SFG": "SF", "TBR": "TB", "WSN": "WSH", "WAS": "WSH", "ATH": "OAK"}
+
 # Illustrative reference sample used when SportsDataIO/Statcast data is unavailable.
 BATTERS = [
     {
@@ -99,6 +111,46 @@ BATTERS = [
     },
 ]
 
+# Season-only reference lines (no Statcast splits): pitch-type fit is neutral and recent form defaults to baseline.
+BATTERS += [
+    {"name": "Giancarlo Stanton", "team": "New York Yankees", "bats": "R",
+     "season": {"games": 114, "pa": 459, "ab": 417, "hits": 97, "doubles": 15, "triples": 0, "hr": 27}},
+    {"name": "Kyle Schwarber", "team": "Philadelphia Phillies", "bats": "L",
+     "season": {"games": 162, "pa": 700, "ab": 573, "hits": 142, "doubles": 22, "triples": 0, "hr": 38}},
+    {"name": "Bryce Harper", "team": "Philadelphia Phillies", "bats": "L",
+     "season": {"games": 145, "pa": 631, "ab": 550, "hits": 157, "doubles": 42, "triples": 0, "hr": 30}},
+    {"name": "Yordan Alvarez", "team": "Houston Astros", "bats": "L",
+     "season": {"games": 147, "pa": 635, "ab": 552, "hits": 170, "doubles": 34, "triples": 2, "hr": 35}},
+    {"name": "Jose Altuve", "team": "Houston Astros", "bats": "R",
+     "season": {"games": 153, "pa": 682, "ab": 628, "hits": 185, "doubles": 31, "triples": 0, "hr": 20}},
+    {"name": "Gunnar Henderson", "team": "Baltimore Orioles", "bats": "L",
+     "season": {"games": 159, "pa": 719, "ab": 630, "hits": 177, "doubles": 31, "triples": 7, "hr": 37}},
+    {"name": "Anthony Santander", "team": "Baltimore Orioles", "bats": "S",
+     "season": {"games": 155, "pa": 665, "ab": 595, "hits": 140, "doubles": 25, "triples": 2, "hr": 44}},
+    {"name": "Marcell Ozuna", "team": "Atlanta Braves", "bats": "R",
+     "season": {"games": 162, "pa": 688, "ab": 606, "hits": 184, "doubles": 31, "triples": 0, "hr": 39}},
+    {"name": "Matt Olson", "team": "Atlanta Braves", "bats": "L",
+     "season": {"games": 162, "pa": 685, "ab": 600, "hits": 148, "doubles": 37, "triples": 0, "hr": 29}},
+    {"name": "Pete Alonso", "team": "New York Mets", "bats": "R",
+     "season": {"games": 162, "pa": 695, "ab": 608, "hits": 146, "doubles": 31, "triples": 0, "hr": 34}},
+    {"name": "Francisco Lindor", "team": "New York Mets", "bats": "S",
+     "season": {"games": 152, "pa": 689, "ab": 626, "hits": 171, "doubles": 39, "triples": 1, "hr": 33}},
+    {"name": "Jose Ramirez", "team": "Cleveland Guardians", "bats": "S",
+     "season": {"games": 158, "pa": 682, "ab": 620, "hits": 173, "doubles": 39, "triples": 2, "hr": 39}},
+    {"name": "Cal Raleigh", "team": "Seattle Mariners", "bats": "S",
+     "season": {"games": 153, "pa": 628, "ab": 546, "hits": 120, "doubles": 21, "triples": 0, "hr": 34}},
+    {"name": "Brent Rooker", "team": "Oakland Athletics", "bats": "R",
+     "season": {"games": 150, "pa": 614, "ab": 532, "hits": 156, "doubles": 30, "triples": 1, "hr": 39}},
+    {"name": "Rafael Devers", "team": "Boston Red Sox", "bats": "L",
+     "season": {"games": 138, "pa": 601, "ab": 525, "hits": 142, "doubles": 34, "triples": 1, "hr": 28}},
+    {"name": "Salvador Perez", "team": "Kansas City Royals", "bats": "R",
+     "season": {"games": 158, "pa": 652, "ab": 594, "hits": 161, "doubles": 28, "triples": 0, "hr": 27}},
+    {"name": "Riley Greene", "team": "Detroit Tigers", "bats": "L",
+     "season": {"games": 137, "pa": 584, "ab": 507, "hits": 133, "doubles": 29, "triples": 3, "hr": 24}},
+    {"name": "Elly De La Cruz", "team": "Cincinnati Reds", "bats": "S",
+     "season": {"games": 160, "pa": 696, "ab": 618, "hits": 150, "doubles": 36, "triples": 10, "hr": 25}},
+]
+
 PITCHERS = [
     {
         "name": "League Average Pitcher", "team": "", "throws": "R",
@@ -152,7 +204,11 @@ PARKS = [
     {"name": "Citizens Bank Park", "team": "Philadelphia Phillies", "hr_factor": 1.10, "tb_factor": 1.03, "roof": "open"},
     {"name": "Dodger Stadium", "team": "Los Angeles Dodgers", "hr_factor": 1.08, "tb_factor": 1.00, "roof": "open"},
     {"name": "Minute Maid Park", "team": "Houston Astros", "hr_factor": 1.05, "tb_factor": 1.00, "roof": "retractable"},
+    {"name": "Truist Park", "team": "Atlanta Braves", "hr_factor": 1.02, "tb_factor": 1.01, "roof": "open"},
+    {"name": "Oriole Park at Camden Yards", "team": "Baltimore Orioles", "hr_factor": 1.00, "tb_factor": 1.00, "roof": "open"},
     {"name": "Wrigley Field", "team": "Chicago Cubs", "hr_factor": 1.00, "tb_factor": 1.00, "roof": "open"},
+    {"name": "Progressive Field", "team": "Cleveland Guardians", "hr_factor": 0.97, "tb_factor": 0.98, "roof": "open"},
+    {"name": "Citi Field", "team": "New York Mets", "hr_factor": 0.95, "tb_factor": 0.96, "roof": "open"},
     {"name": "Fenway Park", "team": "Boston Red Sox", "hr_factor": 0.98, "tb_factor": 1.08, "roof": "open"},
     {"name": "Tropicana Field", "team": "Tampa Bay Rays", "hr_factor": 0.92, "tb_factor": 0.95, "roof": "dome"},
     {"name": "Comerica Park", "team": "Detroit Tigers", "hr_factor": 0.90, "tb_factor": 0.98, "roof": "open"},
@@ -184,12 +240,29 @@ def _find(entries: list[dict], reference: str | None, allow_team: bool = True) -
     return None
 
 
+def team_full_name(reference: str | None) -> str:
+    """Map an MLB abbreviation (e.g. `NYY`) or full/partial team name to the full team name; '' when unknown."""
+    raw = (reference or "").strip()
+    if not raw:
+        return ""
+    code = TEAM_ALIASES.get(raw.upper(), raw.upper())
+    if code in MLB_TEAMS:
+        return MLB_TEAMS[code]
+    target = _normalize(raw)
+    for full in MLB_TEAMS.values():
+        if _normalize(full) == target:
+            return full
+    partial = [full for full in MLB_TEAMS.values() if target and target in _normalize(full)]
+    return partial[0] if len(partial) == 1 else ""
+
+
 def reference_data() -> dict:
     return {
         "sport": SPORT_KEY,
         "batters": [{"name": b["name"], "team": b["team"], "bats": b["bats"]} for b in BATTERS],
         "pitchers": [{"name": p["name"], "team": p["team"], "throws": p["throws"]} for p in PITCHERS],
         "parks": [{"name": p["name"], "team": p["team"], "hr_factor": p["hr_factor"], "tb_factor": p["tb_factor"], "roof": p["roof"]} for p in PARKS],
+        "teams": sorted({b["team"] for b in BATTERS}),
         "league": LEAGUE,
         "markets": {"home_run": HR_MARKET, "total_bases": TB_MARKET},
         "disclaimer": DISCLAIMER,
@@ -288,26 +361,20 @@ class MLBPropModel:
         self.odds_client = odds_client or OddsAPIClient()
 
     # ----- data resolution -------------------------------------------------
-    def _resolve_batter(self, reference: str) -> tuple[dict, str]:
-        local = _find(BATTERS, reference, allow_team=False)
-        batter = {
-            "name": local["name"] if local else reference.strip(),
+    @staticmethod
+    def _batter_from_local(local: dict | None, name: str = "") -> dict:
+        return {
+            "name": local["name"] if local else name.strip(),
             "team": local["team"] if local else "",
             "bats": local["bats"] if local else "R",
             "season": dict(local["season"]) if local else None,
-            "statcast": dict(local["statcast"]) if local else None,
-            "recent": dict(local["recent"]) if local else None,
-            "slg_vs_pitch": dict(local["slg_vs_pitch"]) if local else {},
+            "statcast": dict(local["statcast"]) if local and local.get("statcast") else None,
+            "recent": dict(local["recent"]) if local and local.get("recent") else None,
+            "slg_vs_pitch": dict(local.get("slg_vs_pitch") or {}) if local else {},
         }
-        mode = "fallback"
-        live = self.sports_client.fetch_mlb_player_stats(batter["name"]) if self.sports_client.api_key else None
-        if live and live["season"]["pa"] > 0:
-            mode = "live"
-            batter["name"] = live["name"]
-            batter["team"] = batter["team"] or live["team"]
-            batter["season"] = live["season"]
-            if live.get("recent") and live["recent"]["pa"] > 0:
-                batter["recent"] = live["recent"]
+
+    @staticmethod
+    def _finalize_batter(batter: dict) -> dict:
         if batter["season"] is None:
             raise MLBLookupError("batter not found")
         if batter["statcast"] is None:
@@ -319,7 +386,21 @@ class MLBPropModel:
             }
         if batter["recent"] is None:
             batter["recent"] = {"games": 0, "pa": 0, "hr": 0, "tb": 0}
-        return batter, mode
+        return batter
+
+    def _resolve_batter(self, reference: str) -> tuple[dict, str]:
+        local = _find(BATTERS, reference, allow_team=False)
+        batter = self._batter_from_local(local, reference)
+        mode = "fallback"
+        live = self.sports_client.fetch_mlb_player_stats(batter["name"]) if self.sports_client.api_key else None
+        if live and live["season"]["pa"] > 0:
+            mode = "live"
+            batter["name"] = live["name"]
+            batter["team"] = batter["team"] or team_full_name(live["team"])
+            batter["season"] = live["season"]
+            if live.get("recent") and live["recent"]["pa"] > 0:
+                batter["recent"] = live["recent"]
+        return self._finalize_batter(batter), mode
 
     def _resolve_pitcher(self, reference: str | None) -> tuple[dict, str]:
         local = _find(PITCHERS, reference) if reference else PITCHERS[0]
@@ -358,6 +439,18 @@ class MLBPropModel:
         batter, batter_mode = self._resolve_batter(player)
         opponent, pitcher_mode = self._resolve_pitcher(pitcher)
         venue = self._resolve_park(park, batter["team"])
+        return self._score(batter, batter_mode, opponent, pitcher_mode, venue, overrides)
+
+    def _score(
+        self,
+        batter: dict,
+        batter_mode: str,
+        opponent: dict,
+        pitcher_mode: str,
+        venue: dict,
+        overrides: dict,
+        live_markets: bool = True,
+    ) -> dict:
 
         season = batter["season"]
         for key, field in (("season_hr", "hr"), ("season_pa", "pa")):
@@ -518,7 +611,7 @@ class MLBPropModel:
         hr_game_probability = at_least_one_probability(hr_final, expected_pa)
 
         tb_line = overrides.get("tb_line")
-        tb_market_live = None if tb_line is not None or "tb_over_odds" in overrides else self._live_market(batter, TB_MARKET)
+        tb_market_live = None if tb_line is not None or "tb_over_odds" in overrides else (self._live_market(batter, TB_MARKET) if live_markets else None)
         if tb_line is None:
             tb_line = tb_market_live["line"] if tb_market_live and tb_market_live.get("line") is not None else (1.5 if expected_tb >= 1.3 else 0.5)
         tb_over_probability = probability_over(distribution, tb_line)
@@ -535,7 +628,7 @@ class MLBPropModel:
         }
 
         # 8. Market comparison
-        hr_market_live = None if "hr_odds" in overrides else self._live_market(batter, HR_MARKET)
+        hr_market_live = None if "hr_odds" in overrides else (self._live_market(batter, HR_MARKET) if live_markets else None)
         naive_hr = at_least_one_probability(hr_baseline, DEFAULT_EXPECTED_PA)
         seed = f"{batter['name']}:{opponent['name']}:{venue['name']}"
         if "hr_odds" in overrides:
@@ -597,6 +690,114 @@ class MLBPropModel:
             "notes": [
                 "Market probability is compared against the per-game probability P(HR >= 1) = 1 - (1 - HR_final)^PA, "
                 "since sportsbook HR props are priced per game, not per plate appearance.",
+            ],
+            "disclaimer": DISCLAIMER,
+        }
+
+    # ----- per-team home run leaders ----------------------------------------
+    def _team_candidates(self, min_plate_appearances: int) -> tuple[list[dict], str]:
+        """Batters grouped later by team: live SportsDataIO season lines (enriched with reference Statcast) or the reference sample."""
+        local_by_name = {_normalize(entry["name"]): entry for entry in BATTERS}
+        if self.sports_client.api_key:
+            live = self.sports_client.fetch_mlb_season_batters(min_plate_appearances)
+            if live:
+                candidates = []
+                for row in live:
+                    team = team_full_name(row["team"])
+                    if not team:
+                        continue
+                    batter = self._batter_from_local(local_by_name.get(_normalize(row["name"])), row["name"])
+                    batter["name"] = row["name"]
+                    batter["team"] = team
+                    batter["season"] = dict(row["season"])
+                    candidates.append(self._finalize_batter(batter))
+                return candidates, "live"
+        candidates = [
+            self._finalize_batter(self._batter_from_local(entry))
+            for entry in BATTERS
+            if entry["season"]["pa"] >= min_plate_appearances
+        ]
+        return candidates, "fallback"
+
+    def team_home_run_leaders(
+        self,
+        team: str | None = None,
+        limit: int = 5,
+        pitcher: str | None = None,
+        park: str | None = None,
+        overrides: dict | None = None,
+        min_plate_appearances: int = 100,
+    ) -> dict:
+        """Rank each team's batters by model P(HR >= 1) for the game, using the full layered prop model."""
+        overrides = dict(overrides or {})
+        team_filter = None
+        if team:
+            team_filter = team_full_name(team)
+            if not team_filter:
+                raise MLBLookupError("team not found")
+        opponent, pitcher_mode = self._resolve_pitcher(pitcher)
+        fixed_venue = self._resolve_park(park, "") if park else None
+        candidates, batter_mode = self._team_candidates(min_plate_appearances)
+
+        by_team: dict[str, list[dict]] = {}
+        for batter in candidates:
+            if team_filter and batter["team"] != team_filter:
+                continue
+            by_team.setdefault(batter["team"], []).append(batter)
+
+        teams = []
+        for team_name in sorted(by_team):
+            venue = fixed_venue or self._resolve_park(None, team_name)
+            rows = []
+            for batter in by_team[team_name]:
+                result = self._score(
+                    batter, batter_mode, opponent, pitcher_mode, venue, overrides, live_markets=team_filter is not None
+                )
+                hr = result["home_run"]
+                steps = result["steps"]
+                rows.append(
+                    {
+                        "name": batter["name"],
+                        "bats": batter["bats"],
+                        "season_hr": batter["season"]["hr"],
+                        "season_pa": batter["season"]["pa"],
+                        "hr_baseline": steps["baseline_power"]["hr_baseline"],
+                        "recent_trend": steps["recent_form"]["trend"],
+                        "per_pa_probability": hr["per_pa_probability"],
+                        "game_probability": hr["game_probability"],
+                        "fair_american_odds": hr["fair_american_odds"],
+                        "market_odds": hr["market"]["over_odds"],
+                        "implied_probability": hr["market"]["implied_probability"],
+                        "edge": hr["market"]["edge"],
+                        "market_source": hr["market"]["source_mode"],
+                        "expected_total_bases": result["total_bases"]["expected"],
+                    }
+                )
+            rows.sort(key=lambda row: (-row["game_probability"], row["name"]))
+            for rank, row in enumerate(rows[:limit], start=1):
+                row["rank"] = rank
+            teams.append(
+                {
+                    "team": team_name,
+                    "park": {"name": venue["name"], "hr_factor": venue["hr_factor"]},
+                    "players": rows[:limit],
+                }
+            )
+
+        return {
+            "sport": SPORT_KEY,
+            "team": team_filter,
+            "limit": limit,
+            "pitcher": {"name": opponent["name"], "team": opponent["team"], "throws": opponent["throws"]},
+            "park": fixed_venue["name"] if fixed_venue else "home park",
+            "teams": teams,
+            "sources": {
+                "sportsdataio": {"batters": batter_mode, "pitcher": pitcher_mode},
+                "odds_api": "live when a single team is requested and ODDS_API_KEY is set, otherwise fallback",
+            },
+            "notes": [
+                "Players are ranked by the model's per-game probability of at least one home run.",
+                "The same opposing pitcher, park, and weather inputs are applied to every listed batter.",
             ],
             "disclaimer": DISCLAIMER,
         }

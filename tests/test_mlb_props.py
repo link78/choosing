@@ -9,6 +9,7 @@ from choosing.mlb_props import (
     at_least_one_probability,
     market_comparison,
     probability_over,
+    team_full_name,
     total_bases_distribution,
 )
 from test_api import request
@@ -152,7 +153,74 @@ class MLBLiveOddsTests(unittest.TestCase):
         self.assertIsNotNone(tb_market["no_vig_edge"])
 
 
+class MLBHomeRunLeadersTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict(os.environ, {"SPORTSDATAIO_API_KEY": "", "ODDS_API_KEY": ""})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.model = MLBPropModel()
+
+    def test_team_full_name(self):
+        self.assertEqual(team_full_name("nyy"), "New York Yankees")
+        self.assertEqual(team_full_name("SFG"), "San Francisco Giants")
+        self.assertEqual(team_full_name("Dodgers"), "Los Angeles Dodgers")
+        self.assertEqual(team_full_name("New York"), "")
+        self.assertEqual(team_full_name("Nowhere"), "")
+
+    def test_all_teams_ranked_by_game_probability(self):
+        result = self.model.team_home_run_leaders(limit=2)
+        self.assertGreater(len(result["teams"]), 5)
+        for team in result["teams"]:
+            self.assertLessEqual(len(team["players"]), 2)
+            probabilities = [player["game_probability"] for player in team["players"]]
+            self.assertEqual(probabilities, sorted(probabilities, reverse=True))
+            self.assertEqual([player["rank"] for player in team["players"]], list(range(1, len(probabilities) + 1)))
+        dodgers = next(team for team in result["teams"] if team["team"] == "Los Angeles Dodgers")
+        self.assertEqual(dodgers["park"]["name"], "Dodger Stadium")
+
+    def test_single_team_matches_individual_projection(self):
+        result = self.model.team_home_run_leaders("NYY", 5, "Gerrit Cole", "Coors Field", {"wind_out_mph": 8})
+        self.assertEqual(result["team"], "New York Yankees")
+        self.assertEqual(len(result["teams"]), 1)
+        players = result["teams"][0]["players"]
+        self.assertEqual(players[0]["name"], "Aaron Judge")
+        single = self.model.project("Aaron Judge", "Gerrit Cole", "Coors Field", {"wind_out_mph": 8})
+        self.assertEqual(players[0]["game_probability"], single["home_run"]["game_probability"])
+
+    def test_unknown_team_raises(self):
+        with self.assertRaises(MLBLookupError):
+            self.model.team_home_run_leaders("Nowhere")
+
+    def test_live_season_batters_are_grouped_by_team(self):
+        season = [
+            {"PlayerID": 1, "Name": "Aaron Judge", "Team": "NYY", "Games": 100, "PlateAppearances": 400, "AtBats": 340,
+             "Hits": 100, "Doubles": 20, "Triples": 0, "HomeRuns": 30},
+            {"PlayerID": 2, "Name": "Bench Guy", "Team": "NYY", "Games": 20, "PlateAppearances": 50, "AtBats": 45,
+             "Hits": 10, "Doubles": 1, "Triples": 0, "HomeRuns": 5},
+            {"PlayerID": 3, "Name": "Rookie Slugger", "Team": "SEA", "Games": 90, "PlateAppearances": 350, "AtBats": 310,
+             "Hits": 80, "Doubles": 15, "Triples": 1, "HomeRuns": 22},
+        ]
+        with patch.dict(os.environ, {"SPORTSDATAIO_API_KEY": "test"}):
+            model = MLBPropModel()
+            model.sports_client.fetcher = lambda url, headers=None, timeout=5.0: season
+            result = model.team_home_run_leaders(min_plate_appearances=100)
+        self.assertEqual(result["sources"]["sportsdataio"]["batters"], "live")
+        names = {team["team"]: [player["name"] for player in team["players"]] for team in result["teams"]}
+        self.assertEqual(names, {"New York Yankees": ["Aaron Judge"], "Seattle Mariners": ["Rookie Slugger"]})
+
+
 class MLBApiTests(unittest.TestCase):
+    def test_hr_leaders_endpoint(self):
+        response = request("/mlb/hr-leaders?team=Yankees&limit=2&wind_out_mph=5")
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["body"]["teams"][0]["team"], "New York Yankees")
+        self.assertEqual(len(response["body"]["teams"][0]["players"]), 2)
+        self.assertEqual(request("/mlb/hr-leaders")["status"], "200 OK")
+        self.assertEqual(request("/mlb/hr-leaders?limit=0")["status"], "400 Bad Request")
+        self.assertEqual(request("/mlb/hr-leaders?temperature_f=hot")["status"], "400 Bad Request")
+        self.assertEqual(request("/mlb/hr-leaders?team=Nowhere")["status"], "404 Not Found")
+        self.assertIn("mlb-hr-leaders-form", request("/")["raw_body"])
+
     def test_props_endpoint_returns_projection(self):
         response = request("/mlb/props?player=Aaron%20Judge&pitcher=Gerrit%20Cole&park=Yankee%20Stadium&hr_odds=320&roof_closed=false")
         self.assertEqual(response["status"], "200 OK")

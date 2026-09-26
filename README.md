@@ -49,6 +49,7 @@ The repository still includes the underlying HTTP prediction utilities:
   (when `SPORTSDATAIO_API_KEY` is configured, NFL top-player candidates are pulled from the live SportsDataIO player and season-stat feeds before falling back to local samples)
 - `GET /game/{id}/edge` supports game ids or team names
 - `GET /mlb/props?player={name}&pitcher={name}&park={park}` projects MLB home run and total bases props (see below)
+- `GET /mlb/hr-leaders?team={team}&limit=5` lists each team's batters most likely to homer, ranked by the MLB prop model (see below)
 - `GET /mlb/reference` lists the reference batters, pitchers, parks, and league constants used by the MLB prop model
 - `GET /backtest/summary.json` returns measured ROI, hit rate, Brier score, calibration bins, player error metrics, recent outcomes, and learned-model status
 - `POST /predictions/{prediction_id}/outcome` records actual outcomes for stored player/game predictions so backtesting can grade them over time
@@ -238,3 +239,13 @@ With `SPORTSDATAIO_API_KEY` set, season and last-10 totals come from SportsDataI
 `PlayerGameStatsBySeason`; with `ODDS_API_KEY` set, live prop prices are pulled from the event odds endpoint.
 Otherwise an illustrative reference sample and a deterministic fallback market are used (`sources` reports which).
 This is information only, not betting advice.
+
+### Likely home run hitters by team
+
+`GET /mlb/hr-leaders` (and the **Likely home run hitters by team** dashboard card) runs every batter through the same
+layered model and ranks each team's hitters by per-game `P(HR ≥ 1)`. Optional parameters: `team` (full name, nickname, or
+abbreviation such as `NYY`; omit for all teams), `limit` (1–25 per team, default 5), `pitcher`, `park` (defaults to each
+team's home park), `min_pa` (default 100), `wind_out_mph`, `temperature_f`, `humidity`, `roof_closed`, `pitcher_hr9`,
+`league_hr9`, and `expected_pa`. With `SPORTSDATAIO_API_KEY` set, candidates come from a single SportsDataIO
+`PlayerSeasonStats` call (recent form defaults to the baseline to avoid per-player requests); live Odds API HR prices are
+only fetched when a single `team` is requested, to conserve quota.

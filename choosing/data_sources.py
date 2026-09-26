@@ -797,6 +797,34 @@ class SportsDataIOClient:
             )
         return results
 
+    def fetch_mlb_season_batters(self, min_plate_appearances: int = 1) -> list[dict]:
+        """All MLB season batting lines from a single (cached) SportsDataIO `PlayerSeasonStats` call."""
+        season_stats = self._request(f"stats/json/PlayerSeasonStats/{self.season}", sport="baseball_mlb")
+        if not isinstance(season_stats, list):
+            return []
+        batters = []
+        for row in season_stats:
+            pa = _safe_int(row.get("PlateAppearances"), 0) or 0
+            if pa < min_plate_appearances:
+                continue
+            batters.append(
+                {
+                    "player_id": str(row.get("PlayerID") or ""),
+                    "name": row.get("Name") or " ".join(part for part in [row.get("FirstName"), row.get("LastName")] if part),
+                    "team": row.get("Team") or "",
+                    "season": {
+                        "games": _safe_int(row.get("Games"), 0) or 0,
+                        "pa": pa,
+                        "ab": _safe_int(row.get("AtBats"), 0) or 0,
+                        "hits": _safe_int(row.get("Hits"), 0) or 0,
+                        "doubles": _safe_int(row.get("Doubles"), 0) or 0,
+                        "triples": _safe_int(row.get("Triples"), 0) or 0,
+                        "hr": _safe_int(row.get("HomeRuns"), 0) or 0,
+                    },
+                }
+            )
+        return batters
+
     def fetch_mlb_player_stats(self, player_name: str, recent_games: int = 10) -> dict | None:
         """Season batting/pitching totals plus the last N game logs for an MLB player from SportsDataIO."""
         season_stats = self._request(f"stats/json/PlayerSeasonStats/{self.season}", sport="baseball_mlb")

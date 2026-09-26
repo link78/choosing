@@ -24,6 +24,7 @@ def app_metadata() -> dict:
             "top_players": "/players/top?sport={sport_key}&limit=10",
             "mlb_props": "/mlb/props?player={name}&pitcher={name}&park={park}&wind_out_mph=0&temperature_f=70",
             "mlb_reference": "/mlb/reference",
+            "mlb_hr_leaders": "/mlb/hr-leaders?team={team}&limit=5&pitcher={name}&park={park}",
             "game_edge": "/game/{id}/edge",
             "backtest_summary": "/backtest/summary.json",
             "backtest_grade": "POST /backtest/grade?date=YYYY-MM-DD",
@@ -90,6 +91,9 @@ def render_home_page() -> str:
     mlb_park_options = '<option value="">Batter home park</option>\n' + "\n".join(
         f'<option value="{html.escape(entry["name"])}">{html.escape(entry["name"])} (HR x{entry["hr_factor"]:.2f})</option>'
         for entry in mlb_reference["parks"]
+    )
+    mlb_team_options = '<option value="">All teams</option>\n' + "\n".join(
+        f'<option value="{html.escape(team)}">{html.escape(team)}</option>' for team in mlb_reference["teams"]
     )
     extra_script = EXTRA_SCRIPT
     return f"""<!doctype html>
@@ -434,6 +438,37 @@ def render_home_page() -> str:
           <button type="submit">Project props</button>
         </form>
         <div id="mlb-props-result" class="result muted">Waiting for an MLB prop projection.</div>
+      </article>
+
+      <article class="card">
+        <h2>Likely home run hitters by team</h2>
+        <p class="muted">Each team's batters ranked by the MLB prop model's chance of at least one home run this game. Informational only, not betting advice.</p>
+        <form id="mlb-hr-leaders-form">
+          <label>Team
+            <select id="mlb-hr-team" name="mlb-hr-team">
+              {mlb_team_options}
+            </select>
+          </label>
+          <label>Opposing pitcher (optional)
+            <input id="mlb-hr-pitcher" name="mlb-hr-pitcher" list="mlb-pitcher-options" value="" placeholder="League Average Pitcher">
+          </label>
+          <label>Ballpark
+            <select id="mlb-hr-park" name="mlb-hr-park">
+              {mlb_park_options}
+            </select>
+          </label>
+          <label>Players per team
+            <input id="mlb-hr-limit" name="mlb-hr-limit" value="3" inputmode="numeric">
+          </label>
+          <label>Wind out (mph, negative = in)
+            <input id="mlb-hr-wind" name="mlb-hr-wind" value="" placeholder="0" inputmode="decimal">
+          </label>
+          <label>Temperature (&deg;F)
+            <input id="mlb-hr-temp" name="mlb-hr-temp" value="" placeholder="70" inputmode="decimal">
+          </label>
+          <button type="submit">Load HR candidates</button>
+        </form>
+        <div id="mlb-hr-leaders-result" class="result muted">Waiting for a home run leaders lookup.</div>
       </article>
 
       <article class="card">
@@ -852,6 +887,50 @@ EXTRA_SCRIPT = r"""
       }
       const edgeClass = market.edge > 0 ? "success" : "danger";
       return `<div class="metric"><strong>${esc(label)} market</strong><br>${esc(market.over_odds)} (${esc(market.source_mode)}) · implied ${pct(market.implied_probability)}<br><span class="${edgeClass}">Edge ${pct(market.edge)}</span>${market.no_vig_edge !== null ? ` · no-vig ${pct(market.no_vig_edge)}` : ""}</div>`;
+    }
+
+    async function loadMlbHrLeaders(event) {
+      event.preventDefault();
+      const target = byId("mlb-hr-leaders-result");
+      const params = new URLSearchParams();
+      const fields = [
+        ["team", "mlb-hr-team"], ["pitcher", "mlb-hr-pitcher"], ["park", "mlb-hr-park"], ["limit", "mlb-hr-limit"],
+        ["wind_out_mph", "mlb-hr-wind"], ["temperature_f", "mlb-hr-temp"],
+      ];
+      for (const [name, id] of fields) {
+        const value = byId(id).value.trim();
+        if (value) params.set(name, value);
+      }
+      target.textContent = "Ranking...";
+      try {
+        const response = await fetch(`/mlb/hr-leaders?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok) {
+          target.innerHTML = `<span class="danger">${esc(payload.error || "Request failed")}</span>`;
+          return;
+        }
+        if (!payload.teams.length) {
+          target.innerHTML = '<span class="muted">No batters found for this selection.</span>';
+          return;
+        }
+        const teamsMarkup = payload.teams.map((team) => `
+          <div class="profile-panel">
+            <h3>${esc(team.team)} <span class="muted">· ${esc(team.park.name)} (HR x${esc(team.park.hr_factor)})</span></h3>
+            <ol>
+              ${team.players.map((player) => `
+                <li><strong>${esc(player.name)}</strong> — P(HR) ${pct(player.game_probability)} (fair ${esc(player.fair_american_odds)})
+                  · ${esc(player.season_hr)} HR / ${esc(player.season_pa)} PA · ${esc(player.recent_trend)}
+                  ${player.edge !== null ? `· <span class="${player.edge > 0 ? "success" : "danger"}">edge ${pct(player.edge)}</span> vs ${esc(player.market_odds)} (${esc(player.market_source)})` : ""}
+                </li>`).join("")}
+            </ol>
+          </div>`).join("");
+        target.innerHTML = `
+          <div class="banner muted">vs ${esc(payload.pitcher.name)} · ${esc(payload.park)} · ${esc(payload.sources.sportsdataio.batters)} batter data</div>
+          ${teamsMarkup}
+          <p class="muted">${esc(payload.disclaimer)}</p>`;
+      } catch (error) {
+        target.innerHTML = '<span class="danger">Unable to load home run leaders.</span>';
+      }
     }
 
     async function loadMlbProps(event) {
@@ -1407,6 +1486,7 @@ EXTRA_SCRIPT = r"""
     byId("grade-form").addEventListener("submit", gradeNow);
     byId("slate-form").addEventListener("submit", loadSlate);
     byId("mlb-props-form").addEventListener("submit", loadMlbProps);
+    byId("mlb-hr-leaders-form").addEventListener("submit", loadMlbHrLeaders);
     byId("timeseries-form").addEventListener("submit", loadCharts);
     document.addEventListener("click", handleWatchClick);
     document.addEventListener("click", handleCopyClick);
