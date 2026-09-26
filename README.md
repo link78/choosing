@@ -50,6 +50,12 @@ The repository still includes the underlying HTTP prediction utilities:
 - `GET /game/{id}/edge` supports game ids or team names
 - `GET /backtest/summary.json` returns measured ROI, hit rate, Brier score, calibration bins, player error metrics, recent outcomes, and learned-model status
 - `POST /predictions/{prediction_id}/outcome` records actual outcomes for stored player/game predictions so backtesting can grade them over time
+  (optionally with `closing_odds` to track closing line value)
+- `POST /backtest/grade?date=YYYY-MM-DD` automatically grades pending predictions from The Odds API `/scores`, SportsDataIO `ScoresByDate`, and SportsDataIO `PlayerGameStatsByDate`, and fetches closing lines from `/historical/sports/{sport}/odds` for CLV
+- `GET /backtest/timeseries?window=7d|30d|90d|all&sport=...&rolling=20` returns the cumulative profit (bankroll) curve, drawdown, rolling hit rate, rolling Brier score, and rolling log-loss
+- `GET /backtest/breakdown?by=sport|market|confidence_band|edge_bucket|model_version` shows where the model wins or loses money
+- `GET /predictions.csv` downloads the stored prediction history
+- `GET /slate?sport=...&min_edge=...&min_confidence=...&limit=10` ranks today's games (from The Odds API `/events`, or local teams in fallback mode) by best edge
 - `GET /lookup/players?query={name}`
 - `GET /lookup/teams?query={team}`
 - `GET /` for the responsive UI
@@ -93,6 +99,23 @@ Persistent backtesting and learning now include:
 - lightweight learned-model adaptation that updates sport profiles from recorded results
 - a dashboard section for backtesting performance and model-learning status
 
+Performance tracking and modelling now also include:
+
+- pending/graded counts, a "Grade now" button, log-loss, max drawdown, and closing line value (average CLV, beat-the-close rate, by sport and market) in `/backtest/summary.json`
+- inline SVG charts on the dashboard (bankroll curve, rolling hit rate/Brier, calibration plot, breakdown bars) with no JavaScript dependencies
+- Platt-scaled win probabilities once at least 30 game outcomes are graded, and ridge-fitted per-sport weights once at least 8 samples exist
+- fractional Kelly stake sizing (25% Kelly capped at 1%/2%/3% of bankroll for Low/Moderate/High confidence)
+- a `model_version` tag on every stored prediction
+- player prop edges: pass `prop_line`, `over_odds`, `under_odds` (and optional `prop_market`) to `/player/{id}/prediction`, or configure `ODDS_API_KEY` to use `/events/{eventId}/odds?markets=player_points`
+- h2h odds snapshots (live odds only) with opening-to-current line movement and a warning when the line moves against the pick
+- teammate absences from SportsDataIO injuries and rest days from recent game dates
+- an optional NFL/MLB weather factor (`weather_impact=0..1` override, or live Open-Meteo data)
+- a "why this prediction" panel, an upstream health banner (live vs. fallback), a localStorage watchlist, and the remaining Odds API request quota
+- rest and travel from SportsDataIO `Teams` + `Schedules` (or `Games`) for both sides: rest-day advantage, back-to-backs and travel miles shift the game win probability (override with `rest_days`, `opponent_rest_days`, `travel_miles`, `opponent_travel_miles`)
+- tennis surface-specific Elo rebuilt from graded tennis predictions and blended into the win probability as match history grows (`/game/{player}/edge?sport=tennis_*&opponent={opponent}&surface=hard|clay|grass`; surface is otherwise inferred from the tournament key)
+- player prop line snapshots (live prop lines only) with opening-to-current line movement and a warning when the line moves against the over/under pick
+- a copy button next to every displayed prediction id (and the outcome form's prediction id field); copying an id also fills the outcome form
+
 ## Live API configuration
 
 Set these environment variables to fetch live upstream data before prediction and edge computation:
@@ -112,6 +135,9 @@ Optional live-data configuration:
 - `FANTASY_SPORTS_BASE_URL` (defaults to `SPORTSDATAIO_BASE_URL`)
 - `ODDS_API_BASE_URL` (defaults to `https://api.the-odds-api.com/v4`)
 - `ODDS_API_SPORT` (defaults to `basketball_nba`)
+- `UPSTREAM_CACHE_TTL_SECONDS` (defaults to `120`; set `0` to disable the upstream response cache)
+- `OPEN_METEO_ENABLED` (set to `1` to fetch live NFL/MLB weather from Open-Meteo; no key needed)
+- `OPEN_METEO_BASE_URL` (defaults to `https://api.open-meteo.com/v1`)
 
 Behavior:
 
@@ -155,6 +181,14 @@ Procfile-based deployment:
 
 - `/home/runner/work/choosing/choosing/Procfile` starts the web process with `python -m choosing.api`
 - platforms that inject `PORT` can run the app without code changes
+- the `worker` process runs `python -m choosing.jobs grade --loop --interval 3600` to grade outcomes every hour
+
+Background jobs can also be run once or from cron:
+
+```bash
+python -m choosing.jobs grade --date 2026-09-25
+python -m choosing.jobs refresh --sport basketball_nba
+```
 
 Railpack / Railway compatibility:
 

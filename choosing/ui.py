@@ -23,6 +23,11 @@ def app_metadata() -> dict:
             "top_players": "/players/top?sport={sport_key}&limit=10",
             "game_edge": "/game/{id}/edge",
             "backtest_summary": "/backtest/summary.json",
+            "backtest_grade": "POST /backtest/grade?date=YYYY-MM-DD",
+            "backtest_timeseries": "/backtest/timeseries?window=7d|30d|90d|all&sport={sport_key}",
+            "backtest_breakdown": "/backtest/breakdown?by=sport|market|confidence_band|edge_bucket|model_version",
+            "slate": "/slate?sport={sport_key}&min_edge=0.02&min_confidence=0.5",
+            "predictions_csv": "/predictions.csv",
             "record_outcome": "/predictions/{prediction_id}/outcome",
             "player_lookup": "/lookup/players?query={name}",
             "team_lookup": "/lookup/teams?query={team}",
@@ -59,6 +64,7 @@ def render_home_page() -> str:
     team_options = "\n".join(
         f'<option value="{team["team"]}">{team["opponent"]}</option>' for team in search_teams()
     )
+    extra_script = EXTRA_SCRIPT
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -199,6 +205,26 @@ def render_home_page() -> str:
       color: #d7e7ff;
     }}
     .danger {{ color: var(--danger); }}
+    .warning {{ color: #f2cc60; }}
+    .banner {{
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      font-size: 13px;
+    }}
+    .banner.live {{ border-color: rgba(0,194,168,0.5); }}
+    .banner.fallback {{ border-color: rgba(242,204,96,0.5); }}
+    .inline-actions {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }}
+    .inline-actions a, .link-button {{ color: var(--accent); }}
+    .id-row {{ display: flex; flex-wrap: wrap; align-items: center; gap: 6px; word-break: break-all; }}
+    .id-row code {{ font-size: 12px; }}
+    button.copy-id {{ padding: 4px 10px; border-radius: 8px; font-size: 12px; }}
+    .input-row {{ display: flex; gap: 8px; }}
+    .input-row input {{ flex: 1; }}
+    .chart {{ width: 100%; height: auto; margin-top: 10px; background: rgba(255,255,255,0.02); border-radius: 12px; }}
+    .chart text {{ fill: var(--muted); font-size: 10px; }}
     @media (max-width: 640px) {{
       .shell {{ padding: 14px 12px 28px; }}
       .hero, .card {{ border-radius: 18px; }}
@@ -239,6 +265,7 @@ def render_home_page() -> str:
           <p class="muted">Turns model probability versus bookmaker pricing into betting guidance.</p>
         </article>
       </div>
+      <div id="health-banner" class="banner muted">Checking upstream data sources...</div>
     </section>
 
     <section class="forms">
@@ -277,6 +304,23 @@ def render_home_page() -> str:
           <label>American odds (optional)
             <input id="odds" name="odds" value="-110" inputmode="numeric">
           </label>
+          <label>Sport
+            <select id="game-sport" name="game-sport">
+              <option value="">Default (NBA)</option>
+              {player_sport_options}
+            </select>
+          </label>
+          <label>Opponent (optional, e.g. tennis opponent)
+            <input id="game-opponent" name="game-opponent" value="" placeholder="Override opponent" maxlength="100">
+          </label>
+          <label>Surface (tennis only)
+            <select id="game-surface" name="game-surface">
+              <option value="">Infer from tournament</option>
+              <option value="hard">Hard</option>
+              <option value="clay">Clay</option>
+              <option value="grass">Grass</option>
+            </select>
+          </label>
           <button type="submit">Load edge view</button>
         </form>
         <div id="game-result" class="result muted">Waiting for a game lookup.</div>
@@ -301,7 +345,10 @@ def render_home_page() -> str:
         <p class="muted">Record actual outcomes, review measured performance, and monitor learned-model updates.</p>
         <form id="outcome-form">
           <label>Prediction id
-            <input id="outcome-prediction-id" name="outcome-prediction-id" value="" placeholder="Paste a prediction id">
+            <span class="input-row">
+              <input id="outcome-prediction-id" name="outcome-prediction-id" value="" placeholder="Paste a prediction id">
+              <button type="button" class="copy-id" data-copy-from="outcome-prediction-id" aria-label="Copy prediction id">Copy</button>
+            </span>
           </label>
           <label>Actual outcome (game bet: 1 or 0)
             <input id="actual-outcome" name="actual-outcome" value="" placeholder="1 for win, 0 for loss" inputmode="decimal">
@@ -315,6 +362,68 @@ def render_home_page() -> str:
           <button type="submit">Record outcome</button>
         </form>
         <div id="outcome-result" class="result muted">Waiting for recorded outcomes.</div>
+        <form id="grade-form">
+          <label>Grade date (optional)
+            <input id="grade-date" name="grade-date" type="date" value="">
+          </label>
+          <button type="submit">Grade now</button>
+        </form>
+        <div id="grade-counts" class="banner muted">Loading Pending / Graded counts...</div>
+        <div id="grade-result" class="result muted">Grade pending predictions from upstream final scores.</div>
+        <div class="inline-actions"><a href="/predictions.csv" download>Export prediction history (CSV)</a></div>
+      </article>
+
+      <article class="card">
+        <h2>Today's slate</h2>
+        <p class="muted">Best edges first from upcoming events, filtered by sport, minimum edge, and confidence.</p>
+        <form id="slate-form">
+          <label>Sport
+            <select id="slate-sport" name="slate-sport">
+              {player_sport_options}
+            </select>
+          </label>
+          <label>Minimum edge
+            <input id="slate-min-edge" name="slate-min-edge" value="0" inputmode="decimal">
+          </label>
+          <label>Minimum confidence
+            <input id="slate-min-confidence" name="slate-min-confidence" value="0" inputmode="decimal">
+          </label>
+          <button type="submit">Load slate</button>
+        </form>
+        <div id="slate-result" class="result muted">Waiting for a slate lookup.</div>
+      </article>
+
+      <article class="card">
+        <h2>Watchlist</h2>
+        <p class="muted">Players and games you save are stored in this browser.</p>
+        <div id="watchlist-result" class="result muted">Nothing saved yet.</div>
+      </article>
+    </section>
+
+    <section class="cards">
+      <article class="card">
+        <h3>Performance over time</h3>
+        <form id="timeseries-form">
+          <label>Window
+            <select id="timeseries-window" name="timeseries-window">
+              <option value="7d">Last 7 days</option>
+              <option value="30d" selected>Last 30 days</option>
+              <option value="90d">Last 90 days</option>
+              <option value="all">All time</option>
+            </select>
+          </label>
+          <label>Breakdown
+            <select id="breakdown-by" name="breakdown-by">
+              <option value="sport">Sport</option>
+              <option value="market">Market</option>
+              <option value="confidence_band">Confidence band</option>
+              <option value="edge_bucket" selected>Edge bucket</option>
+              <option value="model_version">Model version</option>
+            </select>
+          </label>
+          <button type="submit">Refresh charts</button>
+        </form>
+        <div id="performance-charts" class="result muted">Loading performance charts...</div>
       </article>
     </section>
 
@@ -370,7 +479,7 @@ def render_home_page() -> str:
             <h3>Prediction</h3>
             <div class="metric-grid">
               <div class="metric"><strong>Player</strong><br>${{payload.player_name}}</div>
-              <div class="metric"><strong>Prediction id</strong><br>${{payload.meta.prediction_id || "Not stored"}}</div>
+              <div class="metric"><strong>Prediction id</strong><br>${{predictionIdMarkup(payload.meta.prediction_id)}}</div>
               <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
               <div class="metric"><strong>Sport</strong><br>${{payload.sport.name}} · ${{payload.sport.league}}</div>
               <div class="metric"><strong>Minutes</strong><br>${{payload.predictions.expected_minutes}}</div>
@@ -410,6 +519,10 @@ def render_home_page() -> str:
               ${{profileSports.length ? listMarkup(profileSports, 'key') : '<div class="metric"><strong>Odds API sports</strong><br>No data</div>'}}
             </div>
           </div>
+          ${{propMarkup(payload.prop_market)}}
+          ${{weatherMarkup(payload.weather)}}
+          ${{whyMarkup(payload.predictions.feature_tracking, payload.predictions.calibration)}}
+          ${{watchButton("player", payload.player_name, {{ team: payload.team, sport: payload.sport.odds_api_key }})}}
         </div>
       `;
     }}
@@ -472,6 +585,12 @@ def render_home_page() -> str:
               <div class="metric"><strong>Hit rate</strong><br>${{payload.hit_rate ?? "N/A"}}</div>
               <div class="metric"><strong>Brier score</strong><br>${{payload.brier_score ?? "N/A"}}</div>
               <div class="metric"><strong>Player MAE</strong><br>${{payload.player_mean_absolute_error ?? "N/A"}}</div>
+              <div class="metric"><strong>Pending / Graded</strong><br>${{payload.pending_predictions ?? 0}} / ${{payload.graded_predictions ?? 0}}</div>
+              <div class="metric"><strong>Log-loss</strong><br>${{payload.log_loss ?? "N/A"}}</div>
+              <div class="metric"><strong>Max drawdown</strong><br>${{payload.max_drawdown ?? "N/A"}}</div>
+              <div class="metric"><strong>Average CLV</strong><br>${{payload.closing_line_value?.average_clv ?? "N/A"}}</div>
+              <div class="metric"><strong>Beat the close</strong><br>${{payload.closing_line_value?.beat_close_rate ?? "N/A"}} (${{payload.closing_line_value?.samples ?? 0}} samples)</div>
+              <div class="metric"><strong>Model version</strong><br>${{esc(payload.current_model_version)}}</div>
             </div>
           </div>
           <div class="profile-panel">
@@ -496,7 +615,7 @@ def render_home_page() -> str:
             <div class="metric-grid">
               ${{
                 recent.length
-                  ? recent.map((item) => `<div class="metric"><strong>${{item.subject}}</strong><br>${{item.prediction_id}}<br>Action: ${{item.recommended_action || "tracked"}}<br>Profit: ${{item.profit_units ?? "N/A"}}</div>`).join("")
+                  ? recent.map((item) => `<div class="metric"><strong>${{item.subject}}</strong><br>${{predictionIdMarkup(item.prediction_id)}}<br>Action: ${{item.recommended_action || "tracked"}}<br>Profit: ${{item.profit_units ?? "N/A"}}</div>`).join("")
                   : '<div class="metric"><strong>No stored history</strong><br>Generate predictions and record outcomes to build backtesting.</div>'
               }}
             </div>
@@ -509,7 +628,7 @@ def render_home_page() -> str:
       return `
         <div class="metric-grid">
           <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
-          <div class="metric"><strong>Prediction id</strong><br>${{payload.meta.prediction_id || "Not stored"}}</div>
+          <div class="metric"><strong>Prediction id</strong><br>${{predictionIdMarkup(payload.meta.prediction_id)}}</div>
           <div class="metric"><strong>Opponent</strong><br>${{payload.opponent}}</div>
           <div class="metric"><strong>Win probability</strong><br>${{payload.team_prediction.win_probability}}</div>
           <div class="metric"><strong>Win range</strong><br>${{payload.team_prediction.win_probability_range.low}} - ${{payload.team_prediction.win_probability_range.high}}</div>
@@ -521,6 +640,17 @@ def render_home_page() -> str:
           <div class="metric"><strong>Stake</strong><br>${{payload.betting_edge.recommended_stake}}</div>
           <div class="metric"><strong>Edge quality</strong><br>${{payload.betting_edge.edge_quality}}</div>
           <div class="metric"><strong>Confidence</strong><br>${{payload.betting_edge.confidence}}</div>
+          <div class="metric"><strong>Calibrated probability</strong><br>${{payload.betting_edge.calibrated_probability}} · ${{esc(payload.betting_edge.calibration.mode)}}</div>
+          <div class="metric"><strong>Kelly stake</strong><br>${{kellyLabel(payload.betting_edge.kelly)}}</div>
+          <div class="metric"><strong>Line movement</strong><br>${{esc(payload.line_history.opening_odds)}} → ${{esc(payload.line_history.current_odds)}} (${{payload.line_history.snapshots}} snapshots)</div>
+        </div>
+        ${{payload.line_history.warning ? `<p class="warning">⚠ ${{esc(payload.line_history.warning)}}</p>` : ""}}
+        <div class="profile-stack">
+          ${{scheduleMarkup(payload.schedule_context, payload.team_prediction.schedule_adjustment)}}
+          ${{tennisEloMarkup(payload.tennis_elo)}}
+          ${{weatherMarkup(payload.weather)}}
+          ${{whyMarkup(payload.betting_edge.feature_tracking, payload.betting_edge.calibration)}}
+          ${{watchButton("game", payload.team, {{ sport: payload.sport.odds_api_key }})}}
         </div>
       `;
     }}
@@ -550,6 +680,12 @@ def render_home_page() -> str:
       const odds = byId("odds").value.trim();
       if (modelProbability) params.set("model_probability", modelProbability);
       if (odds) params.set("odds", odds);
+      const gameSport = byId("game-sport").value.trim();
+      const gameOpponent = byId("game-opponent").value.trim();
+      const gameSurface = byId("game-surface").value.trim();
+      if (gameSport) params.set("sport", gameSport);
+      if (gameOpponent) params.set("opponent", gameOpponent);
+      if (gameSurface) params.set("surface", gameSurface);
       const gameId = encodeURIComponent(byId("game-id").value.trim());
       const response = await fetch(`/game/${{gameId}}/edge?${{params.toString()}}`);
       const payload = await response.json();
@@ -574,6 +710,9 @@ def render_home_page() -> str:
       const response = await fetch("/backtest/summary.json");
       const payload = await response.json();
       target.innerHTML = response.ok ? backtestMarkup(payload) : `<span class="danger">${{payload.error || "Request failed"}}</span>`;
+      if (response.ok) {{
+        byId("grade-counts").innerHTML = `<strong>Pending / Graded:</strong> ${{payload.pending_predictions ?? 0}} / ${{payload.graded_predictions ?? 0}}`;
+      }}
     }}
 
     async function recordOutcome(event) {{
@@ -598,7 +737,7 @@ def render_home_page() -> str:
       }});
       const result = await response.json();
       target.innerHTML = response.ok
-        ? `<strong>Outcome recorded.</strong><br>Prediction: ${{result.prediction.prediction_id}}`
+        ? `<strong>Outcome recorded.</strong><br>Prediction: ${{predictionIdMarkup(result.prediction.prediction_id)}}`
         : `<span class="danger">${{result.error || "Request failed"}}</span>`;
       if (response.ok) {{
         await loadBacktestSummary();
@@ -619,7 +758,373 @@ def render_home_page() -> str:
     byId("top-players-form").addEventListener("submit", loadTopPlayers);
     byId("outcome-form").addEventListener("submit", recordOutcome);
     byId("top-players-result").addEventListener("click", loadSelectedTopPlayer);
+    {extra_script}
     loadBacktestSummary();
   </script>
 </body>
 </html>"""
+
+
+EXTRA_SCRIPT = r"""
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char]));
+    }
+
+    function kellyLabel(kelly) {
+      if (!kelly) return "N/A";
+      return `${(kelly.stake_fraction * 100).toFixed(2)}% of bankroll (${kelly.stake_units} u / ${kelly.bankroll_units} u, cap ${(kelly.confidence_cap * 100).toFixed(0)}%)`;
+    }
+
+    function whyMarkup(tracking, calibration) {
+      const helping = (tracking && tracking.helping) || [];
+      const hurting = (tracking && tracking.hurting) || [];
+      return `
+        <div class="profile-panel">
+          <h3>Why this prediction</h3>
+          <div class="metric-grid">
+            <div class="metric"><strong>Helping</strong><br>${helping.length ? helping.map(esc).join(", ") : "No strong positives"}</div>
+            <div class="metric"><strong>Hurting</strong><br>${hurting.length ? hurting.map(esc).join(", ") : "No strong negatives"}</div>
+            <div class="metric"><strong>Calibration</strong><br>${esc(calibration?.mode || "n/a")}${calibration?.samples ? ` · ${calibration.samples} samples` : ""}</div>
+          </div>
+        </div>`;
+    }
+
+    function propMarkup(prop) {
+      if (!prop) {
+        return '<div class="profile-panel"><h3>Prop market</h3><p class="muted">No live prop line. Add prop_line, over_odds and under_odds to compare.</p></div>';
+      }
+      return `
+        <div class="profile-panel">
+          <h3>Prop market · ${esc(prop.market)}</h3>
+          <div class="metric-grid">
+            <div class="metric"><strong>Line</strong><br>${esc(prop.line)} (O ${esc(prop.over_odds)} / U ${esc(prop.under_odds)})</div>
+            <div class="metric"><strong>Projection</strong><br>${esc(prop.projection)} ± ${esc(prop.projection_sigma)}</div>
+            <div class="metric"><strong>P(over)</strong><br>${esc(prop.probability_over)}</div>
+            <div class="metric"><strong>Edge</strong><br>${esc(prop.edge)}</div>
+            <div class="metric"><strong>Action</strong><br>${esc(prop.recommended_action)}</div>
+            <div class="metric"><strong>Kelly stake</strong><br>${kellyLabel(prop.kelly)}</div>
+            ${prop.line_history ? `<div class="metric"><strong>Line movement</strong><br>${esc(prop.line_history.opening_line)} → ${esc(prop.line_history.current_line)} (${esc(prop.line_history.snapshots)} snapshots)</div>` : ""}
+          </div>
+          ${prop.line_history && prop.line_history.warning ? `<p class="warning">⚠ ${esc(prop.line_history.warning)}</p>` : ""}
+        </div>`;
+    }
+
+    function predictionIdMarkup(predictionId) {
+      if (!predictionId) return "Not stored";
+      return `<span class="id-row"><code>${esc(predictionId)}</code><button type="button" class="copy-id" data-copy="${esc(predictionId)}" aria-label="Copy prediction id">Copy</button></span>`;
+    }
+
+    async function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const helper = document.createElement("textarea");
+      helper.value = text;
+      helper.setAttribute("readonly", "");
+      helper.style.position = "fixed";
+      helper.style.opacity = "0";
+      document.body.appendChild(helper);
+      helper.select();
+      try {
+        if (!document.execCommand("copy")) throw new Error("copy failed");
+      } finally {
+        helper.remove();
+      }
+    }
+
+    async function handleCopyClick(event) {
+      const button = event.target.closest(".copy-id");
+      if (!button) return;
+      event.preventDefault();
+      const text = button.dataset.copyFrom ? byId(button.dataset.copyFrom).value.trim() : button.dataset.copy || "";
+      if (!text) {
+        button.textContent = "Nothing to copy";
+      } else {
+        try {
+          await copyText(text);
+          button.textContent = "Copied!";
+          if (!button.dataset.copyFrom) byId("outcome-prediction-id").value = text;
+        } catch (error) {
+          button.textContent = "Copy failed";
+        }
+      }
+      setTimeout(() => { button.textContent = "Copy"; }, 1500);
+    }
+
+    function scheduleMarkup(schedule, adjustment) {
+      if (!schedule) return "";
+      const side = (rest, miles, b2b) => `${rest ?? "?"} rest days${b2b ? " (back-to-back)" : ""} · ${miles ?? "?"} mi travel`;
+      return `
+        <div class="profile-panel">
+          <h3>Rest &amp; travel (${esc(schedule.source_mode)})</h3>
+          <div class="metric-grid">
+            <div class="metric"><strong>Team</strong><br>${esc(side(schedule.rest_days, schedule.travel_miles, schedule.back_to_back))}</div>
+            <div class="metric"><strong>Opponent</strong><br>${esc(side(schedule.opponent_rest_days, schedule.opponent_travel_miles, schedule.opponent_back_to_back))}</div>
+            <div class="metric"><strong>Win probability shift</strong><br>${esc(adjustment)}</div>
+          </div>
+        </div>`;
+    }
+
+    function tennisEloMarkup(elo) {
+      if (!elo) return "";
+      return `
+        <div class="profile-panel">
+          <h3>Surface Elo · ${esc(elo.surface)}</h3>
+          <div class="metric-grid">
+            <div class="metric"><strong>Player rating</strong><br>${esc(elo.player_rating)} (${esc(elo.player_surface_matches)} on surface / ${esc(elo.player_matches)} total)</div>
+            <div class="metric"><strong>Opponent rating</strong><br>${esc(elo.opponent_rating)} (${esc(elo.opponent_surface_matches)} on surface / ${esc(elo.opponent_matches)} total)</div>
+            <div class="metric"><strong>Elo win probability</strong><br>${esc(elo.elo_probability)}</div>
+            <div class="metric"><strong>Blend weight</strong><br>${esc(elo.blend_weight)}</div>
+          </div>
+        </div>`;
+    }
+
+    function weatherMarkup(weather) {
+      if (!weather) return "";
+      const detail = weather.indoor
+        ? "Indoor venue"
+        : `${weather.temperature_f ?? "?"}°F · wind ${weather.wind_mph ?? "?"} mph · precip ${weather.precipitation_mm ?? "?"} mm`;
+      return `
+        <div class="profile-panel">
+          <h3>Weather (${esc(weather.mode)})</h3>
+          <div class="metric-grid">
+            <div class="metric"><strong>Conditions</strong><br>${esc(detail)}</div>
+            <div class="metric"><strong>Impact</strong><br>${esc(weather.weather_impact)} · scoring ×${esc(weather.scoring_factor)}</div>
+          </div>
+        </div>`;
+    }
+
+    const WATCHLIST_KEY = "choosing.watchlist";
+
+    function readWatchlist() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(WATCHLIST_KEY) || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function writeWatchlist(items) {
+      localStorage.setItem(WATCHLIST_KEY, JSON.stringify(items.slice(0, 50)));
+      renderWatchlist();
+    }
+
+    function watchButton(kind, name, extra) {
+      const data = esc(JSON.stringify({ kind, name, ...extra }));
+      return `<div class="inline-actions"><button type="button" class="watch-add" data-item="${data}">Add to watchlist</button></div>`;
+    }
+
+    function renderWatchlist() {
+      const target = byId("watchlist-result");
+      const items = readWatchlist();
+      if (!items.length) {
+        target.innerHTML = "Nothing saved yet.";
+        return;
+      }
+      target.innerHTML = `<div class="metric-grid">${items.map((item, index) => `
+        <div class="metric">
+          <strong>${esc(item.name)}</strong><br>${esc(item.kind)}${item.team ? ` · ${esc(item.team)}` : ""}
+          <div class="inline-actions">
+            <button type="button" class="watch-open" data-index="${index}">Open</button>
+            <button type="button" class="watch-remove" data-index="${index}">Remove</button>
+          </div>
+        </div>`).join("")}</div>`;
+    }
+
+    async function handleWatchClick(event) {
+      const addButton = event.target.closest(".watch-add");
+      if (addButton) {
+        const item = JSON.parse(addButton.dataset.item);
+        const items = readWatchlist().filter((entry) => !(entry.kind === item.kind && entry.name === item.name));
+        writeWatchlist([item, ...items]);
+        addButton.textContent = "Saved";
+        return;
+      }
+      const removeButton = event.target.closest(".watch-remove");
+      if (removeButton) {
+        const items = readWatchlist();
+        items.splice(Number(removeButton.dataset.index), 1);
+        writeWatchlist(items);
+        return;
+      }
+      const openButton = event.target.closest(".watch-open");
+      if (openButton) {
+        const item = readWatchlist()[Number(openButton.dataset.index)];
+        if (!item) return;
+        if (item.kind === "player") {
+          byId("player-id").value = item.name || "";
+          byId("player-team").value = item.team || "";
+          if (item.sport) byId("player-sport").value = item.sport;
+          await loadPlayer(event);
+        } else {
+          byId("game-id").value = item.name || "";
+          if (item.sport) byId("game-sport").value = item.sport;
+          await loadGame(event);
+        }
+      }
+    }
+
+    async function loadHealth() {
+      const target = byId("health-banner");
+      try {
+        const response = await fetch("/health");
+        const payload = await response.json();
+        const sources = payload.sources || {};
+        const entries = Object.entries(sources);
+        const liveCount = entries.filter(([, status]) => status.mode === "live").length;
+        const odds = sources.odds_api || {};
+        const quota = odds.requests_remaining != null ? ` · Odds API requests remaining: ${esc(odds.requests_remaining)}` : "";
+        target.className = `banner ${liveCount ? "live" : "fallback"}`;
+        target.innerHTML = `<strong>${liveCount ? "Live data" : "Fallback sample data"}</strong> · ${entries.map(([name, status]) => `${esc(name)}: ${esc(status.mode)}${status.last_call_succeeded === false ? " (last call failed)" : ""}`).join(" · ")}${quota}`;
+      } catch (error) {
+        target.className = "banner fallback";
+        target.textContent = "Unable to reach /health.";
+      }
+    }
+
+    async function gradeNow(event) {
+      event.preventDefault();
+      const target = byId("grade-result");
+      target.textContent = "Grading pending predictions...";
+      const date = byId("grade-date").value.trim();
+      const suffix = date ? `?date=${encodeURIComponent(date)}` : "";
+      const response = await fetch(`/backtest/grade${suffix}`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) {
+        target.innerHTML = `<span class="danger">${esc(payload.error || "Request failed")}</span>`;
+        return;
+      }
+      const skipped = Object.entries(payload.skipped || {}).map(([reason, count]) => `${esc(reason)}: ${count}`).join(", ");
+      target.innerHTML = `<strong>Graded ${payload.graded_count} of ${payload.checked} checked.</strong><br>Pending / Graded: ${payload.pending} / ${payload.total_graded}<br><span class="muted">${skipped || "Nothing skipped"}</span>`;
+      await loadBacktestSummary();
+      await loadCharts();
+    }
+
+    async function loadSlate(event) {
+      event.preventDefault();
+      const target = byId("slate-result");
+      target.textContent = "Loading slate...";
+      const params = new URLSearchParams();
+      params.set("sport", byId("slate-sport").value.trim());
+      const minEdge = byId("slate-min-edge").value.trim();
+      const minConfidence = byId("slate-min-confidence").value.trim();
+      if (minEdge) params.set("min_edge", minEdge);
+      if (minConfidence) params.set("min_confidence", minConfidence);
+      const response = await fetch(`/slate?${params.toString()}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        target.innerHTML = `<span class="danger">${esc(payload.error || "Request failed")}</span>`;
+        return;
+      }
+      if (!payload.games.length) {
+        target.innerHTML = `No games match the filters (${payload.evaluated} evaluated, ${esc(payload.source_mode)} data).`;
+        return;
+      }
+      target.innerHTML = `<p class="muted">${payload.evaluated} evaluated · ${esc(payload.source_mode)} data</p><div class="metric-grid">${payload.games.map((game) => `
+        <div class="metric">
+          <strong>${esc(game.matchup)}</strong><br>
+          Pick: ${esc(game.pick)} (${esc(game.current_odds)})<br>
+          Edge: ${esc(game.edge)} · Confidence: ${esc(game.confidence)}<br>
+          Action: ${esc(game.recommended_action)}<br>
+          Stake: ${kellyLabel(game.kelly)}<br>
+          Why: ${esc((game.feature_tracking.helping || []).join(", ") || "n/a")}
+          ${game.line_warning ? `<br><span class="warning">⚠ ${esc(game.line_warning)}</span>` : ""}
+          ${watchButton("game", game.pick, {})}
+        </div>`).join("")}</div>`;
+    }
+
+    function lineChart(points, key, label) {
+      const values = points.map((point) => point[key]).filter((value) => value != null);
+      if (!values.length) return `<p class="muted">${esc(label)}: no graded results yet.</p>`;
+      const width = 320, height = 120, pad = 20;
+      const min = Math.min(0, ...values), max = Math.max(0, ...values);
+      const span = max - min || 1;
+      const x = (index) => pad + (values.length === 1 ? 0 : (index / (values.length - 1)) * (width - pad * 2));
+      const y = (value) => height - pad - ((value - min) / span) * (height - pad * 2);
+      const path = values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(" ");
+      return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(label)}">
+        <line x1="${pad}" y1="${y(0)}" x2="${width - pad}" y2="${y(0)}" stroke="rgba(255,255,255,0.2)"></line>
+        <path d="${path}" fill="none" stroke="#58a6ff" stroke-width="2"></path>
+        <text x="${pad}" y="12">${esc(label)} · last ${esc(values[values.length - 1])}</text>
+      </svg>`;
+    }
+
+    function calibrationChart(curve) {
+      if (!curve.length) return "no resolved outcomes yet.";
+      const size = 160, pad = 18;
+      const scale = (value) => pad + value * (size - pad * 2);
+      const dots = curve.map((item) => `<circle cx="${scale(item.predicted).toFixed(1)}" cy="${(size - scale(item.actual)).toFixed(1)}" r="${Math.min(3 + item.count, 9)}" fill="#00c2a8"><title>${esc(item.range)}: predicted ${item.predicted}, actual ${item.actual}, n=${item.count}</title></circle>`).join("");
+      return `<svg class="chart" viewBox="0 0 ${size} ${size}" role="img" aria-label="Calibration plot">
+        <line x1="${pad}" y1="${size - pad}" x2="${size - pad}" y2="${pad}" stroke="rgba(255,255,255,0.25)" stroke-dasharray="4 3"></line>
+        ${dots}
+        <text x="${pad}" y="12">Predicted vs actual</text>
+      </svg>`;
+    }
+
+    function barChart(segments, key, label) {
+      if (!segments.length) return `<p class="muted">${esc(label)}: no graded results yet.</p>`;
+      const width = 320, rowHeight = 22, pad = 90;
+      const values = segments.map((segment) => segment[key] ?? 0);
+      const maxAbs = Math.max(...values.map((value) => Math.abs(value)), 0.0001);
+      const mid = pad + (width - pad - 10) / 2;
+      const half = (width - pad - 10) / 2;
+      const bars = segments.map((segment, index) => {
+        const value = segment[key] ?? 0;
+        const length = (Math.abs(value) / maxAbs) * half;
+        const x = value >= 0 ? mid : mid - length;
+        const y = 18 + index * rowHeight;
+        return `<text x="4" y="${y + 12}">${esc(segment.segment)} (${segment.bets})</text>
+          <rect x="${x.toFixed(1)}" y="${y}" width="${length.toFixed(1)}" height="14" fill="${value >= 0 ? "#00c2a8" : "#ff7b72"}"><title>${esc(segment.segment)}: ${value}</title></rect>`;
+      }).join("");
+      const height = 24 + segments.length * rowHeight;
+      return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(label)}">
+        <text x="4" y="12">${esc(label)}</text>
+        <line x1="${mid}" y1="16" x2="${mid}" y2="${height}" stroke="rgba(255,255,255,0.2)"></line>
+        ${bars}
+      </svg>`;
+    }
+
+    async function loadCharts(event) {
+      if (event) event.preventDefault();
+      const target = byId("performance-charts");
+      const windowValue = byId("timeseries-window").value;
+      const by = byId("breakdown-by").value;
+      const [seriesResponse, breakdownResponse, summaryResponse] = await Promise.all([
+        fetch(`/backtest/timeseries?window=${encodeURIComponent(windowValue)}`),
+        fetch(`/backtest/breakdown?by=${encodeURIComponent(by)}`),
+        fetch("/backtest/summary.json"),
+      ]);
+      const series = await seriesResponse.json();
+      const breakdown = await breakdownResponse.json();
+      const summary = await summaryResponse.json();
+      if (!seriesResponse.ok || !breakdownResponse.ok) {
+        target.innerHTML = `<span class="danger">${esc(series.error || breakdown.error || "Request failed")}</span>`;
+        return;
+      }
+      const points = series.points || [];
+      target.innerHTML = `
+        <div class="metric-grid">
+          <div class="metric"><strong>Profit (units)</strong><br>${series.summary.total_profit}</div>
+          <div class="metric"><strong>Max drawdown</strong><br>${series.summary.max_drawdown ?? "N/A"}</div>
+          <div class="metric"><strong>Hit rate</strong><br>${series.summary.hit_rate ?? "N/A"}</div>
+          <div class="metric"><strong>Log-loss</strong><br>${series.summary.log_loss ?? "N/A"}</div>
+        </div>
+        ${lineChart(points, "cumulative_profit", "Bankroll curve (units)")}
+        ${lineChart(points, "rolling_hit_rate", "Rolling hit rate")}
+        ${lineChart(points, "rolling_brier_score", "Rolling Brier score")}
+        ${calibrationChart(summary.calibration_curve || [])}
+        ${barChart(breakdown.segments || [], "roi", `ROI by ${by}`)}
+      `;
+    }
+
+    byId("grade-form").addEventListener("submit", gradeNow);
+    byId("slate-form").addEventListener("submit", loadSlate);
+    byId("timeseries-form").addEventListener("submit", loadCharts);
+    document.addEventListener("click", handleWatchClick);
+    document.addEventListener("click", handleCopyClick);
+    renderWatchlist();
+    loadHealth();
+    loadCharts();
+"""
