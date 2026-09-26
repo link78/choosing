@@ -76,6 +76,10 @@ request is proxied to The Odds API (supported query params such as `regions`, `m
 `eventIds`, `daysFrom`, and `date` are forwarded); otherwise, or if the upstream call fails, deterministic local
 fallback data is returned. Responses wrap the upstream payload as `{"provider", "endpoint", "path", "sport",
 "source_mode", "params", "data"}`. Historical odds default `date` to 24 hours ago when omitted.
+`/historical/sports/{sport}` is accepted as an alias for `/historical/sports/{sport}/odds`.
+
+The prediction section of the dashboard includes an **Odds API market data** card that loads and renders each of these
+endpoints (sports list, current odds, event list, event odds, scores, and historical odds) as readable tables.
 
 The displayed The Odds API sport coverage includes:
 
