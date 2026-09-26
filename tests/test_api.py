@@ -411,6 +411,18 @@ class PredictionApiTests(unittest.TestCase):
             self.assertEqual(historical["body"]["data"]["timestamp"], "2026-01-10T00:00:00Z")
             self.assertTrue(historical["body"]["data"]["data"])
 
+            historical_alias = request("/historical/sports/basketball_nba?date=2026-01-10T00:00:00Z")
+            self.assertEqual(historical_alias["status"], "200 OK")
+            self.assertEqual(historical_alias["body"]["endpoint"], "historical_odds")
+
+    def test_home_page_displays_odds_api_market_data_section(self):
+        page = request("/")["raw_body"]
+        self.assertIn('id="odds-data-form"', page)
+        self.assertIn('id="odds-data-result"', page)
+        for label in ("Sports list", "Current odds", "Event list", "Event odds", "Scores", "Historical odds"):
+            self.assertIn(label, page)
+        self.assertIn("function loadOddsData", page)
+
     def test_odds_api_endpoints_validate_inputs(self):
         self.assertEqual(request("/sports/bad%20key/odds")["status"], "400 Bad Request")
         self.assertEqual(request("/sports/basketball_nba/events/bad%2Fid/odds")["status"], "400 Bad Request")

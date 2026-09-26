@@ -341,6 +341,37 @@ def render_home_page() -> str:
       </article>
 
       <article class="card">
+        <h2>Odds API market data</h2>
+        <p class="muted">Browse sports, current odds, events, event odds, scores, and historical odds from The Odds API (local fallback data when no key is configured).</p>
+        <form id="odds-data-form">
+          <label>Data
+            <select id="odds-data-endpoint" name="odds-data-endpoint">
+              <option value="sports">Sports list</option>
+              <option value="odds" selected>Current odds</option>
+              <option value="events">Event list</option>
+              <option value="event_odds">Event odds</option>
+              <option value="scores">Scores</option>
+              <option value="historical_odds">Historical odds</option>
+            </select>
+          </label>
+          <label>Sport
+            <select id="odds-data-sport" name="odds-data-sport">
+              {player_sport_options}
+            </select>
+          </label>
+          <label>Event id (event odds)
+            <input id="odds-data-event" name="odds-data-event" value="" placeholder="Pick from the event list" list="odds-event-options" maxlength="128">
+          </label>
+          <datalist id="odds-event-options"></datalist>
+          <label>Snapshot date (historical odds)
+            <input id="odds-data-date" name="odds-data-date" type="date" value="">
+          </label>
+          <button type="submit">Load market data</button>
+        </form>
+        <div id="odds-data-result" class="result muted">Waiting for a market data lookup.</div>
+      </article>
+
+      <article class="card">
         <h2>Top players by sport</h2>
         <p class="muted">Summarize the top 10 players for a selected sport using predicted performance and scoring outlook.</p>
         <form id="top-players-form">
@@ -1133,6 +1164,151 @@ EXTRA_SCRIPT = r"""
       `;
     }
 
+    const ODDS_DATA_PATHS = {
+      sports: () => "/sports",
+      odds: (sport) => `/sports/${encodeURIComponent(sport)}/odds`,
+      events: (sport) => `/sports/${encodeURIComponent(sport)}/events`,
+      event_odds: (sport, eventId) => `/sports/${encodeURIComponent(sport)}/events/${encodeURIComponent(eventId)}/odds`,
+      scores: (sport) => `/sports/${encodeURIComponent(sport)}/scores`,
+      historical_odds: (sport) => `/historical/sports/${encodeURIComponent(sport)}/odds`,
+    };
+
+    function formatTime(value) {
+      if (!value) return "N/A";
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? esc(value) : esc(parsed.toLocaleString());
+    }
+
+    function oddsTable(headers, rows) {
+      if (!rows.length) return '<p class="muted">No data returned.</p>';
+      return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.9rem">
+        <thead><tr>${headers.map((header) => `<th style="text-align:left;padding:6px;border-bottom:1px solid rgba(255,255,255,0.15)">${esc(header)}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td style="padding:6px;border-bottom:1px solid rgba(255,255,255,0.06);vertical-align:top">${cell}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table></div>`;
+    }
+
+    function formatPrice(price) {
+      const number = Number(price);
+      if (!Number.isFinite(number)) return esc(price);
+      return esc(number > 0 ? `+${number}` : `${number}`);
+    }
+
+    function marketSummary(event) {
+      const lines = [];
+      (event.bookmakers || []).forEach((bookmaker) => {
+        (bookmaker.markets || []).forEach((market) => {
+          const outcomes = (market.outcomes || []).map((outcome) => {
+            const point = outcome.point !== undefined && outcome.point !== null ? ` ${esc(outcome.point)}` : "";
+            return `${esc(outcome.name)}${point} ${formatPrice(outcome.price)}`;
+          }).join(" · ");
+          lines.push(`<strong>${esc(bookmaker.title || bookmaker.key)}</strong> (${esc(market.key)}): ${outcomes}`);
+        });
+      });
+      return lines.length ? lines.join("<br>") : '<span class="muted">No bookmaker prices</span>';
+    }
+
+    function matchupLabel(event) {
+      return `${esc(event.away_team)} @ ${esc(event.home_team)}`;
+    }
+
+    function oddsEventRows(events) {
+      return events.map((event) => [matchupLabel(event), formatTime(event.commence_time), marketSummary(event)]);
+    }
+
+    function updateOddsEventOptions(events) {
+      const list = byId("odds-event-options");
+      list.innerHTML = events.map((event) => `<option value="${esc(event.id)}">${matchupLabel(event)}</option>`).join("");
+      const input = byId("odds-data-event");
+      if (!input.value && events.length) input.value = events[0].id;
+    }
+
+    function renderOddsData(endpoint, payload) {
+      const data = payload.data;
+      if (endpoint === "sports") {
+        const sports = Array.isArray(data) ? data : [];
+        return oddsTable(["Sport", "Key", "Group", "Active"], sports.map((sport) => [
+          esc(sport.title), `<code>${esc(sport.key)}</code>`, esc(sport.group), sport.active ? "Yes" : "No",
+        ]));
+      }
+      if (endpoint === "events") {
+        const events = Array.isArray(data) ? data : [];
+        updateOddsEventOptions(events);
+        return oddsTable(["Matchup", "Start", "Event id"], events.map((event) => [
+          matchupLabel(event), formatTime(event.commence_time), `<code>${esc(event.id)}</code>`,
+        ]));
+      }
+      if (endpoint === "odds") {
+        const events = Array.isArray(data) ? data : [];
+        updateOddsEventOptions(events);
+        return oddsTable(["Matchup", "Start", "Prices"], oddsEventRows(events));
+      }
+      if (endpoint === "event_odds") {
+        const event = data || {};
+        return `<div class="metric-grid">
+            <div class="metric"><strong>Matchup</strong><br>${matchupLabel(event)}</div>
+            <div class="metric"><strong>Start</strong><br>${formatTime(event.commence_time)}</div>
+            <div class="metric"><strong>Event id</strong><br><code>${esc(event.id)}</code></div>
+          </div>
+          ${oddsTable(["Bookmaker", "Last update", "Prices"], (event.bookmakers || []).map((bookmaker) => [
+            esc(bookmaker.title || bookmaker.key), formatTime(bookmaker.last_update), marketSummary({bookmakers: [bookmaker]}),
+          ]))}`;
+      }
+      if (endpoint === "scores") {
+        const games = Array.isArray(data) ? data : [];
+        return oddsTable(["Matchup", "Start", "Score", "Status"], games.map((game) => {
+          const scores = (game.scores || []).map((entry) => `${esc(entry.name)} ${esc(entry.score)}`).join("<br>");
+          return [matchupLabel(game), formatTime(game.commence_time), scores || '<span class="muted">Not started</span>', game.completed ? "Final" : "Upcoming / live"];
+        }));
+      }
+      if (endpoint === "historical_odds") {
+        const snapshot = data || {};
+        const events = Array.isArray(snapshot.data) ? snapshot.data : [];
+        return `<div class="metric-grid">
+            <div class="metric"><strong>Snapshot</strong><br>${formatTime(snapshot.timestamp)}</div>
+            <div class="metric"><strong>Previous</strong><br>${formatTime(snapshot.previous_timestamp)}</div>
+            <div class="metric"><strong>Next</strong><br>${formatTime(snapshot.next_timestamp)}</div>
+          </div>
+          ${oddsTable(["Matchup", "Start", "Prices"], oddsEventRows(events))}`;
+      }
+      return '<p class="muted">Unsupported endpoint.</p>';
+    }
+
+    async function loadOddsData(event) {
+      if (event) event.preventDefault();
+      const target = byId("odds-data-result");
+      const endpoint = byId("odds-data-endpoint").value;
+      const sport = byId("odds-data-sport").value;
+      const eventId = byId("odds-data-event").value.trim();
+      const date = byId("odds-data-date").value;
+      if (endpoint === "event_odds" && !eventId) {
+        target.innerHTML = '<span class="danger">Enter an event id (load the event list or current odds first).</span>';
+        return;
+      }
+      let url = ODDS_DATA_PATHS[endpoint](sport, eventId);
+      if (endpoint === "historical_odds" && date) {
+        url += `?date=${encodeURIComponent(`${date}T12:00:00Z`)}`;
+      }
+      target.innerHTML = '<span class="muted">Loading market data...</span>';
+      try {
+        const response = await fetch(url);
+        const payload = await response.json();
+        if (!response.ok) {
+          target.innerHTML = `<span class="danger">${esc(payload.error || "Request failed")}</span>`;
+          return;
+        }
+        target.innerHTML = `
+          <div class="banner muted">${esc(payload.provider)} · <code>${esc(payload.path)}</code> · ${esc(payload.source_mode)} data</div>
+          ${renderOddsData(endpoint, payload)}`;
+      } catch (error) {
+        target.innerHTML = '<span class="danger">Unable to load market data.</span>';
+      }
+    }
+
+    byId("odds-data-sport").addEventListener("change", () => {
+      byId("odds-data-event").value = "";
+      byId("odds-event-options").innerHTML = "";
+    });
+    byId("odds-data-form").addEventListener("submit", loadOddsData);
     byId("grade-form").addEventListener("submit", gradeNow);
     byId("slate-form").addEventListener("submit", loadSlate);
     byId("timeseries-form").addEventListener("submit", loadCharts);
@@ -1141,4 +1317,5 @@ EXTRA_SCRIPT = r"""
     renderWatchlist();
     loadHealth();
     loadCharts();
+    loadOddsData();
 """

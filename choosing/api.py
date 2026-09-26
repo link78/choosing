@@ -176,7 +176,7 @@ def _match_odds_api_route(path: str) -> tuple[str, str | None, str | None] | Non
         return parts[2], parts[1], None
     if len(parts) == 5 and parts[0] == "sports" and parts[2] == "events" and parts[4] == "odds":
         return "event_odds", parts[1], parts[3]
-    if len(parts) == 4 and parts[:2] == ["historical", "sports"] and parts[3] == "odds":
+    if parts[:2] == ["historical", "sports"] and (len(parts) == 3 or (len(parts) == 4 and parts[3] == "odds")):
         return "historical_odds", parts[2], None
     return None
 
