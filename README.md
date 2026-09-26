@@ -111,8 +111,10 @@ Performance tracking and modelling now also include:
 - teammate absences from SportsDataIO injuries and rest days from recent game dates
 - an optional NFL/MLB weather factor (`weather_impact=0..1` override, or live Open-Meteo data)
 - a "why this prediction" panel, an upstream health banner (live vs. fallback), a localStorage watchlist, and the remaining Odds API request quota
-
-Not yet implemented: tennis surface-specific Elo and schedule-based travel.
+- rest and travel from SportsDataIO `Teams` + `Schedules` (or `Games`) for both sides: rest-day advantage, back-to-backs and travel miles shift the game win probability (override with `rest_days`, `opponent_rest_days`, `travel_miles`, `opponent_travel_miles`)
+- tennis surface-specific Elo rebuilt from graded tennis predictions and blended into the win probability as match history grows (`/game/{player}/edge?sport=tennis_*&opponent={opponent}&surface=hard|clay|grass`; surface is otherwise inferred from the tournament key)
+- player prop line snapshots (live prop lines only) with opening-to-current line movement and a warning when the line moves against the over/under pick
+- a copy button next to every displayed prediction id (and the outcome form's prediction id field); copying an id also fills the outcome form
 
 ## Live API configuration
 
