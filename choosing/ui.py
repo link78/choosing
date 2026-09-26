@@ -218,6 +218,11 @@ def render_home_page() -> str:
     .banner.fallback {{ border-color: rgba(242,204,96,0.5); }}
     .inline-actions {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }}
     .inline-actions a, .link-button {{ color: var(--accent); }}
+    .id-row {{ display: flex; flex-wrap: wrap; align-items: center; gap: 6px; word-break: break-all; }}
+    .id-row code {{ font-size: 12px; }}
+    button.copy-id {{ padding: 4px 10px; border-radius: 8px; font-size: 12px; }}
+    .input-row {{ display: flex; gap: 8px; }}
+    .input-row input {{ flex: 1; }}
     .chart {{ width: 100%; height: auto; margin-top: 10px; background: rgba(255,255,255,0.02); border-radius: 12px; }}
     .chart text {{ fill: var(--muted); font-size: 10px; }}
     @media (max-width: 640px) {{
@@ -299,6 +304,23 @@ def render_home_page() -> str:
           <label>American odds (optional)
             <input id="odds" name="odds" value="-110" inputmode="numeric">
           </label>
+          <label>Sport
+            <select id="game-sport" name="game-sport">
+              <option value="">Default (NBA)</option>
+              {player_sport_options}
+            </select>
+          </label>
+          <label>Opponent (optional, e.g. tennis opponent)
+            <input id="game-opponent" name="game-opponent" value="" placeholder="Override opponent" maxlength="100">
+          </label>
+          <label>Surface (tennis only)
+            <select id="game-surface" name="game-surface">
+              <option value="">Infer from tournament</option>
+              <option value="hard">Hard</option>
+              <option value="clay">Clay</option>
+              <option value="grass">Grass</option>
+            </select>
+          </label>
           <button type="submit">Load edge view</button>
         </form>
         <div id="game-result" class="result muted">Waiting for a game lookup.</div>
@@ -323,7 +345,10 @@ def render_home_page() -> str:
         <p class="muted">Record actual outcomes, review measured performance, and monitor learned-model updates.</p>
         <form id="outcome-form">
           <label>Prediction id
-            <input id="outcome-prediction-id" name="outcome-prediction-id" value="" placeholder="Paste a prediction id">
+            <span class="input-row">
+              <input id="outcome-prediction-id" name="outcome-prediction-id" value="" placeholder="Paste a prediction id">
+              <button type="button" class="copy-id" data-copy-from="outcome-prediction-id" aria-label="Copy prediction id">Copy</button>
+            </span>
           </label>
           <label>Actual outcome (game bet: 1 or 0)
             <input id="actual-outcome" name="actual-outcome" value="" placeholder="1 for win, 0 for loss" inputmode="decimal">
@@ -454,7 +479,7 @@ def render_home_page() -> str:
             <h3>Prediction</h3>
             <div class="metric-grid">
               <div class="metric"><strong>Player</strong><br>${{payload.player_name}}</div>
-              <div class="metric"><strong>Prediction id</strong><br>${{payload.meta.prediction_id || "Not stored"}}</div>
+              <div class="metric"><strong>Prediction id</strong><br>${{predictionIdMarkup(payload.meta.prediction_id)}}</div>
               <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
               <div class="metric"><strong>Sport</strong><br>${{payload.sport.name}} · ${{payload.sport.league}}</div>
               <div class="metric"><strong>Minutes</strong><br>${{payload.predictions.expected_minutes}}</div>
@@ -590,7 +615,7 @@ def render_home_page() -> str:
             <div class="metric-grid">
               ${{
                 recent.length
-                  ? recent.map((item) => `<div class="metric"><strong>${{item.subject}}</strong><br>${{item.prediction_id}}<br>Action: ${{item.recommended_action || "tracked"}}<br>Profit: ${{item.profit_units ?? "N/A"}}</div>`).join("")
+                  ? recent.map((item) => `<div class="metric"><strong>${{item.subject}}</strong><br>${{predictionIdMarkup(item.prediction_id)}}<br>Action: ${{item.recommended_action || "tracked"}}<br>Profit: ${{item.profit_units ?? "N/A"}}</div>`).join("")
                   : '<div class="metric"><strong>No stored history</strong><br>Generate predictions and record outcomes to build backtesting.</div>'
               }}
             </div>
@@ -603,7 +628,7 @@ def render_home_page() -> str:
       return `
         <div class="metric-grid">
           <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
-          <div class="metric"><strong>Prediction id</strong><br>${{payload.meta.prediction_id || "Not stored"}}</div>
+          <div class="metric"><strong>Prediction id</strong><br>${{predictionIdMarkup(payload.meta.prediction_id)}}</div>
           <div class="metric"><strong>Opponent</strong><br>${{payload.opponent}}</div>
           <div class="metric"><strong>Win probability</strong><br>${{payload.team_prediction.win_probability}}</div>
           <div class="metric"><strong>Win range</strong><br>${{payload.team_prediction.win_probability_range.low}} - ${{payload.team_prediction.win_probability_range.high}}</div>
@@ -621,6 +646,8 @@ def render_home_page() -> str:
         </div>
         ${{payload.line_history.warning ? `<p class="warning">⚠ ${{esc(payload.line_history.warning)}}</p>` : ""}}
         <div class="profile-stack">
+          ${{scheduleMarkup(payload.schedule_context, payload.team_prediction.schedule_adjustment)}}
+          ${{tennisEloMarkup(payload.tennis_elo)}}
           ${{weatherMarkup(payload.weather)}}
           ${{whyMarkup(payload.betting_edge.feature_tracking, payload.betting_edge.calibration)}}
           ${{watchButton("game", payload.team, {{ sport: payload.sport.odds_api_key }})}}
@@ -653,6 +680,12 @@ def render_home_page() -> str:
       const odds = byId("odds").value.trim();
       if (modelProbability) params.set("model_probability", modelProbability);
       if (odds) params.set("odds", odds);
+      const gameSport = byId("game-sport").value.trim();
+      const gameOpponent = byId("game-opponent").value.trim();
+      const gameSurface = byId("game-surface").value.trim();
+      if (gameSport) params.set("sport", gameSport);
+      if (gameOpponent) params.set("opponent", gameOpponent);
+      if (gameSurface) params.set("surface", gameSurface);
       const gameId = encodeURIComponent(byId("game-id").value.trim());
       const response = await fetch(`/game/${{gameId}}/edge?${{params.toString()}}`);
       const payload = await response.json();
@@ -704,7 +737,7 @@ def render_home_page() -> str:
       }});
       const result = await response.json();
       target.innerHTML = response.ok
-        ? `<strong>Outcome recorded.</strong><br>Prediction: ${{result.prediction.prediction_id}}`
+        ? `<strong>Outcome recorded.</strong><br>Prediction: ${{predictionIdMarkup(result.prediction.prediction_id)}}`
         : `<span class="danger">${{result.error || "Request failed"}}</span>`;
       if (response.ok) {{
         await loadBacktestSummary();
@@ -770,6 +803,79 @@ EXTRA_SCRIPT = r"""
             <div class="metric"><strong>Edge</strong><br>${esc(prop.edge)}</div>
             <div class="metric"><strong>Action</strong><br>${esc(prop.recommended_action)}</div>
             <div class="metric"><strong>Kelly stake</strong><br>${kellyLabel(prop.kelly)}</div>
+            ${prop.line_history ? `<div class="metric"><strong>Line movement</strong><br>${esc(prop.line_history.opening_line)} → ${esc(prop.line_history.current_line)} (${esc(prop.line_history.snapshots)} snapshots)</div>` : ""}
+          </div>
+          ${prop.line_history && prop.line_history.warning ? `<p class="warning">⚠ ${esc(prop.line_history.warning)}</p>` : ""}
+        </div>`;
+    }
+
+    function predictionIdMarkup(predictionId) {
+      if (!predictionId) return "Not stored";
+      return `<span class="id-row"><code>${esc(predictionId)}</code><button type="button" class="copy-id" data-copy="${esc(predictionId)}" aria-label="Copy prediction id">Copy</button></span>`;
+    }
+
+    async function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const helper = document.createElement("textarea");
+      helper.value = text;
+      helper.setAttribute("readonly", "");
+      helper.style.position = "fixed";
+      helper.style.opacity = "0";
+      document.body.appendChild(helper);
+      helper.select();
+      try {
+        if (!document.execCommand("copy")) throw new Error("copy failed");
+      } finally {
+        helper.remove();
+      }
+    }
+
+    async function handleCopyClick(event) {
+      const button = event.target.closest(".copy-id");
+      if (!button) return;
+      event.preventDefault();
+      const text = button.dataset.copyFrom ? byId(button.dataset.copyFrom).value.trim() : button.dataset.copy || "";
+      if (!text) {
+        button.textContent = "Nothing to copy";
+      } else {
+        try {
+          await copyText(text);
+          button.textContent = "Copied!";
+          if (!button.dataset.copyFrom) byId("outcome-prediction-id").value = text;
+        } catch (error) {
+          button.textContent = "Copy failed";
+        }
+      }
+      setTimeout(() => { button.textContent = "Copy"; }, 1500);
+    }
+
+    function scheduleMarkup(schedule, adjustment) {
+      if (!schedule) return "";
+      const side = (rest, miles, b2b) => `${rest ?? "?"} rest days${b2b ? " (back-to-back)" : ""} · ${miles ?? "?"} mi travel`;
+      return `
+        <div class="profile-panel">
+          <h3>Rest &amp; travel (${esc(schedule.source_mode)})</h3>
+          <div class="metric-grid">
+            <div class="metric"><strong>Team</strong><br>${esc(side(schedule.rest_days, schedule.travel_miles, schedule.back_to_back))}</div>
+            <div class="metric"><strong>Opponent</strong><br>${esc(side(schedule.opponent_rest_days, schedule.opponent_travel_miles, schedule.opponent_back_to_back))}</div>
+            <div class="metric"><strong>Win probability shift</strong><br>${esc(adjustment)}</div>
+          </div>
+        </div>`;
+    }
+
+    function tennisEloMarkup(elo) {
+      if (!elo) return "";
+      return `
+        <div class="profile-panel">
+          <h3>Surface Elo · ${esc(elo.surface)}</h3>
+          <div class="metric-grid">
+            <div class="metric"><strong>Player rating</strong><br>${esc(elo.player_rating)} (${esc(elo.player_surface_matches)} on surface / ${esc(elo.player_matches)} total)</div>
+            <div class="metric"><strong>Opponent rating</strong><br>${esc(elo.opponent_rating)} (${esc(elo.opponent_surface_matches)} on surface / ${esc(elo.opponent_matches)} total)</div>
+            <div class="metric"><strong>Elo win probability</strong><br>${esc(elo.elo_probability)}</div>
+            <div class="metric"><strong>Blend weight</strong><br>${esc(elo.blend_weight)}</div>
           </div>
         </div>`;
     }
@@ -854,6 +960,7 @@ EXTRA_SCRIPT = r"""
           await loadPlayer(event);
         } else {
           byId("game-id").value = item.name || "";
+          if (item.sport) byId("game-sport").value = item.sport;
           await loadGame(event);
         }
       }
@@ -1016,6 +1123,7 @@ EXTRA_SCRIPT = r"""
     byId("slate-form").addEventListener("submit", loadSlate);
     byId("timeseries-form").addEventListener("submit", loadCharts);
     document.addEventListener("click", handleWatchClick);
+    document.addEventListener("click", handleCopyClick);
     renderWatchlist();
     loadHealth();
     loadCharts();

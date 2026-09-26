@@ -12,8 +12,10 @@ from .data_sources import (
     SportsDataIOClient,
     WeatherClient,
     search_players,
+    travel_fatigue,
     search_teams,
 )
+from .elo import build_surface_elo, infer_surface, is_tennis
 from .grading import OutcomeGrader
 from .learner import WeightAdaptor
 from .metrics import build_backtest_summary, build_breakdown, build_timeseries
@@ -32,6 +34,7 @@ HISTORY_LIMIT = 2000
 LINE_MOVE_WARNING_THRESHOLD = 0.02
 PLAYER_WEATHER_SENSITIVITY = 0.06
 GAME_WEATHER_SENSITIVITY = 0.08
+PROP_LINE_MOVE_WARNING = 0.5
 
 
 class PredictionService:
@@ -101,6 +104,15 @@ class PredictionService:
                 prop,
                 payload["predictions"]["confidence_band"],
             )
+            if persist and prop.get("source_mode") == "live":
+                self.store.append_odds_snapshot(
+                    sport_key,
+                    f"{sports_data['player_name']}|{payload['prop_market']['market']}",
+                    "prop_line",
+                    payload["prop_market"]["over_odds"],
+                    line=payload["prop_market"]["line"],
+                )
+            payload["prop_market"]["line_history"] = self._prop_line_history(sports_data["player_name"], payload["prop_market"])
         payload["odds_api_catalog"] = _odds_api_catalog()
         payload["predictions"]["odds_api_endpoints"] = _odds_api_catalog()["endpoints"]
         payload["source_snapshots"] = {
@@ -151,7 +163,10 @@ class PredictionService:
         persist: bool = True,
         sport: str | None = None,
         record_snapshot: bool | None = None,
+        opponent: str | None = None,
+        surface: str | None = None,
     ) -> dict:
+        sports_overrides = sports_overrides or {}
         sport_key = resolve_player_sport(sport)["odds_api_key"] if sport else self.odds_client.sport
         sports_future = UPSTREAM_EXECUTOR.submit(self.sports_client.fetch_game_context, game_id, sports_overrides)
         odds_future = UPSTREAM_EXECUTOR.submit(self.odds_client.fetch_game_market, game_id, odds_overrides, sport_key)
@@ -161,10 +176,22 @@ class PredictionService:
         odds_data = odds_future.result()
         media_data = media_future.result()
         fantasy_data = fantasy_future.result()
+        if opponent:
+            sports_data["opponent"] = opponent
         game_inputs = dict(sports_data)
         game_inputs.update({key: value for key, value in media_data.items() if key != "source_mode"})
         game_inputs.update({key: value for key, value in fantasy_data.items() if key != "source_mode"})
         game_inputs["sport_profile"] = resolve_sport_model(sport_key)
+        schedule_context = self._schedule_context(sports_data["team"], sports_data["opponent"], sport_key, sports_overrides)
+        if schedule_context:
+            for key in ("rest_days", "opponent_rest_days", "travel_fatigue", "opponent_travel_fatigue"):
+                if schedule_context.get(key) is not None:
+                    game_inputs[key] = schedule_context[key]
+        tennis_elo = None
+        if is_tennis(sport_key):
+            tennis_elo = self._tennis_elo(sports_data["team"], sports_data["opponent"], surface or infer_surface(sport_key))
+            game_inputs["elo_probability"] = tennis_elo["elo_probability"]
+            game_inputs["elo_blend_weight"] = tennis_elo["blend_weight"]
         payload = build_game_edge(sports_data["game_id"], game_inputs, odds_data)
         apply_probability_calibration(payload, self.learner.calibrator_for(sport_key))
         payload["meta"] = self._meta(sports_data["game_id"], "game")
@@ -216,6 +243,9 @@ class PredictionService:
             },
         }
         payload["sport"] = resolve_player_sport(sport_key)
+        payload["schedule_context"] = schedule_context
+        if tennis_elo is not None:
+            payload["tennis_elo"] = tennis_elo
         weather = self.weather_client.fetch_venue_weather(sports_data["team"], sport_key, sports_overrides)
         payload["weather"] = _apply_weather(
             payload["team_prediction"], "expected_points", "expected_points_range", weather, GAME_WEATHER_SENSITIVITY
@@ -228,6 +258,67 @@ class PredictionService:
             prediction_id = self.store.append_prediction("game", payload)
             payload["meta"]["prediction_id"] = prediction_id
         return payload
+
+    def _schedule_context(self, team: str, opponent: str, sport_key: str, overrides: dict) -> dict | None:
+        """Rest/travel for both sides from SportsDataIO schedules, with query overrides taking precedence."""
+        team_live = opponent_live = None
+        if self.sports_client.api_key:
+            team_future = UPSTREAM_EXECUTOR.submit(self.sports_client.fetch_schedule_context, team, sport_key)
+            opponent_future = UPSTREAM_EXECUTOR.submit(self.sports_client.fetch_schedule_context, opponent, sport_key)
+            team_live, opponent_live = team_future.result(), opponent_future.result()
+        team_live, opponent_live = team_live or {}, opponent_live or {}
+        rest_days = overrides.get("rest_days", team_live.get("rest_days"))
+        opponent_rest_days = overrides.get("opponent_rest_days", opponent_live.get("rest_days"))
+        travel_miles = overrides.get("travel_miles", team_live.get("travel_miles"))
+        opponent_travel_miles = overrides.get("opponent_travel_miles", opponent_live.get("travel_miles"))
+        if all(value is None for value in (rest_days, opponent_rest_days, travel_miles, opponent_travel_miles)):
+            return None
+        overridden = any(
+            key in overrides for key in ("rest_days", "opponent_rest_days", "travel_miles", "opponent_travel_miles")
+        )
+        return {
+            "rest_days": rest_days,
+            "opponent_rest_days": opponent_rest_days,
+            "travel_miles": travel_miles,
+            "opponent_travel_miles": opponent_travel_miles,
+            "back_to_back": rest_days == 0 if rest_days is not None else None,
+            "opponent_back_to_back": opponent_rest_days == 0 if opponent_rest_days is not None else None,
+            "travel_fatigue": travel_fatigue(travel_miles, rest_days == 0),
+            "opponent_travel_fatigue": travel_fatigue(opponent_travel_miles, opponent_rest_days == 0),
+            "road_game": team_live.get("road_game"),
+            "source_mode": "override" if overridden else "live",
+        }
+
+    def _tennis_elo(self, player: str, opponent: str, surface: str) -> dict:
+        records = self.store.list_predictions(limit=HISTORY_LIMIT, resolved_only=True, entity_type="game")
+        return build_surface_elo(records).predict(player, opponent, surface)
+
+    def _prop_line_history(self, player_name: str, prop: dict) -> dict:
+        snapshots = self.store.list_odds_snapshots(f"{player_name}|{prop['market']}", "prop_line")
+        lines = [entry for entry in snapshots if entry.get("line") is not None]
+        opening_line = lines[0]["line"] if lines else prop["line"]
+        line_change = round(prop["line"] - opening_line, 2)
+        action = prop["recommended_action"]
+        against_pick = (action == "over" and line_change <= -PROP_LINE_MOVE_WARNING) or (
+            action == "under" and line_change >= PROP_LINE_MOVE_WARNING
+        )
+        return {
+            "market": prop["market"],
+            "snapshots": len(snapshots),
+            "opening_line": opening_line,
+            "current_line": prop["line"],
+            "line_change": line_change,
+            "movement_against_pick": against_pick,
+            "warning": (
+                "The prop line has moved against the model's pick since the first snapshot."
+                if against_pick
+                else None
+            ),
+            "history": [
+                {"captured_at": entry["captured_at"], "line": entry["line"], "over_odds": entry["odds"]}
+                for entry in lines[-20:]
+            ],
+        }
 
     def _line_history(self, team: str, payload: dict) -> dict:
         snapshots = self.store.list_odds_snapshots(team, "h2h")

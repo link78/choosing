@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import threading
@@ -686,6 +687,31 @@ class SportsDataIOClient:
                 }
             )
         return results
+
+    def fetch_schedule_context(self, team: str, sport: str | None = None) -> dict | None:
+        """Rest, back-to-back and travel from SportsDataIO `Schedules`/`Games` for the team's next game."""
+        if not self.api_key or not team:
+            return None
+        teams = self._request("scores/json/Teams", sport=sport)
+        team_names: dict[str, str] = {}
+        team_key = team
+        if isinstance(teams, list):
+            for entry in teams:
+                key = str(entry.get("Key") or "")
+                full_name = " ".join(part for part in [entry.get("City"), entry.get("Name")] if part) or key
+                if key:
+                    team_names[key] = full_name
+                if _normalize(team) in {_normalize(key), _normalize(full_name)} or (
+                    entry.get("Name") and _normalize(entry["Name"]) in _normalize(team)
+                ):
+                    team_key = key or team_key
+        for path in (f"scores/json/Schedules/{self.season}", f"scores/json/Games/{self.season}"):
+            games = self._request(path, sport=sport)
+            if isinstance(games, list) and games:
+                context = compute_schedule_context(games, team_key, team_names)
+                if context:
+                    return {**context, "team_key": team_key, "source_mode": "live"}
+        return None
 
     def _resolve_live_team(self, team_reference: str) -> dict | None:
         normalized_query = _normalize(team_reference)
@@ -1556,3 +1582,100 @@ class WeatherClient:
             "precipitation_mm": precipitation,
             "weather_impact": compute_weather_impact(temperature, wind, precipitation),
         }
+
+
+# Approximate NBA arena coordinates (latitude, longitude, indoor) used for travel distance only.
+NBA_ARENA_COORDINATES = {
+    "atlanta hawks": (33.757, -84.396, True),
+    "boston celtics": (42.366, -71.062, True),
+    "brooklyn nets": (40.683, -73.975, True),
+    "charlotte hornets": (35.225, -80.839, True),
+    "chicago bulls": (41.881, -87.674, True),
+    "cleveland cavaliers": (41.496, -81.688, True),
+    "dallas mavericks": (32.790, -96.810, True),
+    "denver nuggets": (39.749, -105.008, True),
+    "detroit pistons": (42.341, -83.055, True),
+    "golden state warriors": (37.768, -122.388, True),
+    "houston rockets": (29.751, -95.362, True),
+    "indiana pacers": (39.764, -86.155, True),
+    "los angeles clippers": (33.945, -118.341, True),
+    "los angeles lakers": (34.043, -118.267, True),
+    "memphis grizzlies": (35.138, -90.051, True),
+    "miami heat": (25.781, -80.188, True),
+    "milwaukee bucks": (43.045, -87.917, True),
+    "minnesota timberwolves": (44.979, -93.276, True),
+    "new orleans pelicans": (29.949, -90.082, True),
+    "new york knicks": (40.751, -73.993, True),
+    "oklahoma city thunder": (35.463, -97.515, True),
+    "orlando magic": (28.539, -81.384, True),
+    "philadelphia 76ers": (39.901, -75.172, True),
+    "phoenix suns": (33.446, -112.071, True),
+    "portland trail blazers": (45.532, -122.667, True),
+    "sacramento kings": (38.580, -121.500, True),
+    "san antonio spurs": (29.427, -98.438, True),
+    "toronto raptors": (43.643, -79.379, True),
+    "utah jazz": (40.768, -111.901, True),
+    "washington wizards": (38.898, -77.021, True),
+}
+MAX_TRAVEL_FATIGUE_MILES = 2500.0
+
+
+def _venue_coordinates(team_name: str) -> tuple[float, float, bool] | None:
+    normalized = _normalize(team_name or "")
+    return VENUE_COORDINATES.get(normalized) or NBA_ARENA_COORDINATES.get(normalized)
+
+
+def haversine_miles(origin: tuple[float, float], destination: tuple[float, float]) -> float:
+    lat1, lon1 = math.radians(origin[0]), math.radians(origin[1])
+    lat2, lon2 = math.radians(destination[0]), math.radians(destination[1])
+    a = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    return 3958.8 * 2 * math.asin(math.sqrt(a))
+
+
+def travel_fatigue(travel_miles: float | None, back_to_back: bool) -> float:
+    """0 = fresh, 1 = long trip on a back-to-back."""
+    distance_component = clamp((travel_miles or 0.0) / MAX_TRAVEL_FATIGUE_MILES, 0, 1) * 0.7
+    return round(clamp(distance_component + (0.3 if back_to_back else 0.0), 0, 1), 3)
+
+
+def compute_schedule_context(games: list[dict], team_key: str, team_names: dict[str, str] | None = None, now: datetime | None = None) -> dict | None:
+    """Rest days, back-to-back flag and travel miles for a team from a SportsDataIO schedule list.
+
+    `games` entries use SportsDataIO fields (HomeTeam, AwayTeam, DateTime/Day). `team_names` maps team keys to full
+    names so venue coordinates can be resolved.
+    """
+    now = now or datetime.now(timezone.utc)
+    team_names = team_names or {}
+    normalized_key = _normalize(team_key)
+    team_games = []
+    for game in games:
+        home = str(game.get("HomeTeam") or "")
+        away = str(game.get("AwayTeam") or "")
+        if normalized_key not in {_normalize(home), _normalize(away)}:
+            continue
+        kickoff = _parse_iso_datetime(game.get("DateTime") or game.get("Day") or game.get("Date"))
+        if not kickoff:
+            continue
+        team_games.append((kickoff, home, away))
+    if not team_games:
+        return None
+    team_games.sort(key=lambda item: item[0])
+    previous = [entry for entry in team_games if entry[0] < now - timedelta(hours=4)]
+    upcoming = [entry for entry in team_games if entry[0] >= now - timedelta(hours=4)]
+    if not previous or not upcoming:
+        return None
+    last_game, next_game = previous[-1], upcoming[0]
+    rest_days = clamp((next_game[0].date() - last_game[0].date()).days - 1, 0, 7)
+    back_to_back = rest_days == 0
+    origin = _venue_coordinates(team_names.get(last_game[1], last_game[1]))
+    destination = _venue_coordinates(team_names.get(next_game[1], next_game[1]))
+    travel_miles = round(haversine_miles(origin[:2], destination[:2]), 1) if origin and destination else None
+    return {
+        "rest_days": rest_days,
+        "back_to_back": back_to_back,
+        "travel_miles": travel_miles,
+        "road_game": _normalize(next_game[2]) == normalized_key,
+        "last_game_at": last_game[0].isoformat(),
+        "next_game_at": next_game[0].isoformat(),
+        "travel_fatigue": travel_fatigue(travel_miles, back_to_back),
+    }

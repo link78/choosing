@@ -101,7 +101,8 @@ class PredictionStore:
                     subject TEXT NOT NULL,
                     market TEXT NOT NULL,
                     odds INTEGER NOT NULL,
-                    implied_probability REAL
+                    implied_probability REAL,
+                    line REAL
                 );
                 CREATE INDEX IF NOT EXISTS idx_odds_snapshots_subject ON odds_snapshots(subject, market, captured_at);
                 """
@@ -110,6 +111,9 @@ class PredictionStore:
             for column, column_type in EXTRA_PREDICTION_COLUMNS.items():
                 if column not in existing_columns:
                     connection.execute(f"ALTER TABLE predictions ADD COLUMN {column} {column_type}")
+            snapshot_columns = {row["name"] for row in connection.execute("PRAGMA table_info(odds_snapshots)").fetchall()}
+            if "line" not in snapshot_columns:
+                connection.execute("ALTER TABLE odds_snapshots ADD COLUMN line REAL")
 
     def append_prediction(self, entity_type: str, payload: dict) -> str:
         prediction_id = uuid.uuid4().hex
@@ -272,14 +276,16 @@ class PredictionStore:
             ).fetchone()
         return {"total": row["total"] or 0, "pending": row["pending"] or 0, "graded": row["graded"] or 0}
 
-    def append_odds_snapshot(self, sport_key: str | None, subject: str, market: str, odds: int) -> None:
+    def append_odds_snapshot(
+        self, sport_key: str | None, subject: str, market: str, odds: int, line: float | None = None
+    ) -> None:
         if not odds:
             return
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO odds_snapshots (captured_at, sport_key, subject, market, odds, implied_probability)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO odds_snapshots (captured_at, sport_key, subject, market, odds, implied_probability, line)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     datetime.now(timezone.utc).isoformat(),
@@ -288,19 +294,34 @@ class PredictionStore:
                     market,
                     int(odds),
                     round(american_to_probability(int(odds)), 4),
+                    None if line is None else float(line),
                 ),
             )
 
     def list_odds_snapshots(self, subject: str, market: str, limit: int = 50) -> list[dict]:
+        """Opening snapshot followed by the most recent `limit` snapshots, oldest first."""
+        columns = "snapshot_id, captured_at, sport_key, subject, market, odds, implied_probability, line"
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT captured_at, sport_key, subject, market, odds, implied_probability FROM odds_snapshots
-                WHERE subject = ? AND market = ? ORDER BY captured_at ASC, snapshot_id ASC LIMIT ?
+            recent = connection.execute(
+                f"""
+                SELECT {columns} FROM odds_snapshots
+                WHERE subject = ? AND market = ? ORDER BY captured_at DESC, snapshot_id DESC LIMIT ?
                 """,
                 (subject, market, limit),
             ).fetchall()
-        return [dict(row) for row in rows]
+            opening = connection.execute(
+                f"""
+                SELECT {columns} FROM odds_snapshots
+                WHERE subject = ? AND market = ? ORDER BY captured_at ASC, snapshot_id ASC LIMIT 1
+                """,
+                (subject, market),
+            ).fetchone()
+        rows = [dict(row) for row in reversed(recent)]
+        if opening and (not rows or rows[0]["snapshot_id"] != opening["snapshot_id"]):
+            rows.insert(0, dict(opening))
+        for row in rows:
+            row.pop("snapshot_id", None)
+        return rows
 
     def export_csv(self, limit: int = 1000) -> str:
         buffer = io.StringIO()

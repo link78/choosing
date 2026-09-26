@@ -4,6 +4,7 @@ import json
 import os
 from urllib.parse import parse_qs, unquote
 
+from .elo import normalize_surface
 from .grading import parse_grade_date
 from .metrics import BREAKDOWN_DIMENSIONS, TIMESERIES_WINDOWS
 from .service import PredictionService
@@ -66,7 +67,13 @@ GAME_FLOAT_FIELDS = {
     "historical_closing_line_value",
     "market_source_confidence",
     "weather_impact",
+    "rest_days",
+    "opponent_rest_days",
+    "travel_miles",
+    "opponent_travel_miles",
 }
+MAX_TRAVEL_MILES = 10000
+MAX_NAME_LENGTH = 100
 
 GAME_INT_FIELDS = {"opening_odds", "current_odds", "odds"}
 GAME_BOOL_FIELDS = {"steam_move"}
@@ -473,9 +480,28 @@ def app(environ, start_response):
                     "400 Bad Request",
                     {"error": f"{odds_field} cannot be zero"},
                 )
+        for rest_field in ("rest_days", "opponent_rest_days"):
+            if rest_field in sports_overrides and not 0 <= sports_overrides[rest_field] <= 7:
+                return json_response(start_response, "400 Bad Request", {"error": f"{rest_field} must be between 0 and 7"})
+        for travel_field in ("travel_miles", "opponent_travel_miles"):
+            if travel_field in sports_overrides and not 0 <= sports_overrides[travel_field] <= MAX_TRAVEL_MILES:
+                return json_response(
+                    start_response,
+                    "400 Bad Request",
+                    {"error": f"{travel_field} must be between 0 and {MAX_TRAVEL_MILES}"},
+                )
         game_sport = query.get("sport", [""])[0].strip() or None
+        opponent = query.get("opponent", [""])[0].strip() or None
+        if opponent and len(opponent) > MAX_NAME_LENGTH:
+            return json_response(start_response, "400 Bad Request", {"error": f"opponent must be at most {MAX_NAME_LENGTH} characters"})
         try:
-            payload = service.get_game_edge(game_id, sports_overrides, odds_overrides, sport=game_sport)
+            surface = normalize_surface(query.get("surface", [""])[0])
+        except ValueError as exc:
+            return json_response(start_response, "400 Bad Request", {"error": str(exc)})
+        try:
+            payload = service.get_game_edge(
+                game_id, sports_overrides, odds_overrides, sport=game_sport, opponent=opponent, surface=surface
+            )
         except ValueError:
             return json_response(start_response, "400 Bad Request", {"error": "invalid game edge request"})
         except Exception:

@@ -524,6 +524,23 @@ def build_player_prediction(player_id: str, sports_data: dict | None = None) -> 
     }
 
 
+REST_ADVANTAGE_PER_DAY = 0.01
+TRAVEL_FATIGUE_WEIGHT = 0.04
+
+
+def compute_schedule_adjustment(sports_data: dict) -> float:
+    """Win-probability shift from rest advantage and travel fatigue; neutral when schedule data is missing."""
+    rest_days = sports_data.get("rest_days")
+    opponent_rest_days = sports_data.get("opponent_rest_days")
+    rest_component = 0.0
+    if rest_days is not None and opponent_rest_days is not None:
+        rest_component = clamp(min(rest_days, 4) - min(opponent_rest_days, 4), -3, 3) * REST_ADVANTAGE_PER_DAY
+    fatigue_component = (
+        sports_data.get("travel_fatigue") or 0.0
+    ) - (sports_data.get("opponent_travel_fatigue") or 0.0)
+    return round(rest_component - fatigue_component * TRAVEL_FATIGUE_WEIGHT, 4)
+
+
 def build_game_edge(game_id: str, sports_data: dict | None = None, odds_data: dict | None = None) -> dict:
     sports_data = sports_data or {}
     odds_data = odds_data or {}
@@ -554,6 +571,9 @@ def build_game_edge(game_id: str, sports_data: dict | None = None, odds_data: di
     market_source_confidence = odds_data.get("market_source_confidence", 0.72)
     consensus_spread = odds_data.get("consensus_spread", 0.0)
     historical_closing_line_value = odds_data.get("historical_closing_line_value", closing_line_value)
+    schedule_adjustment = compute_schedule_adjustment(sports_data)
+    elo_probability = sports_data.get("elo_probability")
+    elo_blend_weight = clamp(sports_data.get("elo_blend_weight", 0.0), 0, 1)
 
     if "model_probability" in sports_data:
         model_probability = clamp(sports_data["model_probability"], 0.02, 0.98)
@@ -569,10 +589,13 @@ def build_game_edge(game_id: str, sports_data: dict | None = None, odds_data: di
             + (audience_confidence - 0.5) * game_weights["audience_confidence"]
             + (fantasy_market_support - 0.5) * game_weights["fantasy_market_support"]
             + narrative_pressure * game_weights["narrative_pressure"]
-            + injury_leverage * game_weights["injury_leverage"],
+            + injury_leverage * game_weights["injury_leverage"]
+            + schedule_adjustment,
             0.02,
             0.98,
         )
+        if elo_probability is not None and elo_blend_weight > 0:
+            model_probability = clamp((1 - elo_blend_weight) * model_probability + elo_blend_weight * elo_probability, 0.02, 0.98)
     edge = model_probability - implied_probability
     market_stability = clamp(
         1
@@ -640,6 +663,7 @@ def build_game_edge(game_id: str, sports_data: dict | None = None, odds_data: di
             "expected_points_range": expected_points_range,
             "pace": round(pace, 3),
             "efficiency": round(efficiency, 3),
+            "schedule_adjustment": schedule_adjustment,
             "confidence": round(model_confidence, 3),
             "confidence_band": calibration["confidence_band"],
         },
