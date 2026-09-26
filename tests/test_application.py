@@ -34,6 +34,7 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertEqual(report["game_cards"][0]["recommendation"]["stake_label"], "medium")
         self.assertGreater(report["player_cards"][0]["expected_points"], 0)
         self.assertIn(report["player_cards"][0]["injured_label"], {"Yes", "No"})
+        self.assertGreaterEqual(len(report["player_cards"][0]["suggestions"]), 1)
         self.assertIn("availability_risk", report["player_cards"][0]["flags"])
 
     def test_build_report_supports_player_names_and_team_names(self):
@@ -53,6 +54,7 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertIn("readiness_score", report["player_cards"][0]["player_profile"])
         self.assertIn("injury_status", report["player_cards"][0]["player_profile"])
         self.assertIn(report["player_cards"][0]["injured_label"], {"Yes", "No"})
+        self.assertGreaterEqual(len(report["player_cards"][0]["suggestions"]), 1)
         self.assertEqual(report["player_cards"][0]["player_profile"]["sport"]["league"], "NBA")
         self.assertEqual(report["player_cards"][0]["player_profile"]["odds_api_coverage"]["sports"][0]["name"], "NFL")
         self.assertGreaterEqual(
@@ -73,6 +75,7 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertIn("PLAYER WATCHLIST", rendered)
         self.assertIn("points", rendered)
         self.assertRegex(rendered, r"injured yes|injured no")
+        self.assertIn("suggestion", rendered)
         self.assertRegex(rendered, r"likely to score|not likely to score")
         self.assertIn("Stephen Curry", rendered)
         self.assertIn("Golden State Warriors", rendered)

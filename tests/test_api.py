@@ -160,6 +160,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("availability_probability", predictions)
         self.assertIn("injured", predictions)
         self.assertIn("injured_label", predictions)
+        self.assertIn("suggestions", predictions)
         self.assertIn("likely_to_score", predictions)
         self.assertIn("scoring_outlook", predictions)
         self.assertIn("player_profile", response["body"])
@@ -168,6 +169,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("injury_status", response["body"]["player_profile"])
         self.assertIn("injured", response["body"]["player_profile"])
         self.assertIn("injured_label", response["body"]["player_profile"])
+        self.assertIn("suggestions", response["body"]["player_profile"])
         self.assertIn("player_name", response["body"])
         self.assertIn("team", response["body"])
         self.assertEqual(response["body"]["sport"]["name"], "Basketball")
@@ -216,6 +218,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["source_snapshots"]["sports_data_io"]["availability"], 0.95)
         self.assertGreater(response["body"]["predictions"]["expected_points"], 0)
         self.assertEqual(response["body"]["predictions"]["injured_label"], "No")
+        self.assertGreaterEqual(len(response["body"]["predictions"]["suggestions"]), 1)
 
     def test_top_players_endpoint_returns_ranked_players_for_selected_sport(self):
         response = request("/players/top?sport=basketball_nba&limit=10")
@@ -226,6 +229,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(len(response["body"]["top_players"]), 10)
         self.assertIn("/player/", response["body"]["top_players"][0]["player_prediction_path"])
         self.assertIn("injured_label", response["body"]["top_players"][0])
+        self.assertIn("suggestions", response["body"]["top_players"][0])
         self.assertGreaterEqual(
             response["body"]["top_players"][0]["expected_performance"],
             response["body"]["top_players"][-1]["expected_performance"],

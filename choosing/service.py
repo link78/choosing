@@ -51,6 +51,10 @@ class PredictionService:
         payload["sport"] = dict(player_inputs["sport"])
         payload["injury_status"] = sports_data.get("injury_status", "Unknown")
         payload["player_profile"] = _build_player_profile(payload, player_inputs)
+        suggestions = _build_player_suggestions(payload, player_inputs)
+        payload["predictions"]["suggestions"] = suggestions
+        payload["player_profile"]["suggestions"] = suggestions
+        payload["player_profile"]["computation_data"]["suggestions"] = suggestions
         payload["odds_api_catalog"] = _odds_api_catalog()
         payload["predictions"]["odds_api_endpoints"] = _odds_api_catalog()["endpoints"]
         payload["source_snapshots"] = {
@@ -179,6 +183,7 @@ class PredictionService:
                     "injured": prediction["predictions"]["injured"],
                     "injured_label": prediction["predictions"]["injured_label"],
                     "scoring_outlook": prediction["predictions"]["scoring_outlook"],
+                    "suggestions": prediction["predictions"]["suggestions"],
                     "availability_probability": prediction["predictions"]["availability_probability"],
                     "underperformance_risk": prediction["predictions"]["underperformance_risk"],
                     "player_profile": prediction["player_profile"],
@@ -287,6 +292,41 @@ def _odds_api_catalog() -> dict:
         "endpoints": [dict(entry) for entry in ODDS_API_ENDPOINTS],
         "sports": [dict(entry) for entry in ODDS_API_SPORTS],
     }
+
+
+def _build_player_suggestions(prediction: dict, sports_data: dict) -> list[str]:
+    sport_key = sports_data.get("sport", {}).get("odds_api_key", "basketball_nba")
+    availability = prediction["predictions"]["availability_probability"]
+    underperformance_risk = prediction["predictions"]["underperformance_risk"]
+    recent_form = prediction["player_signals"]["recent_form"]
+    consistency = prediction["player_signals"]["consistency"]
+    workload = prediction["player_signals"]["workload_fatigue"]
+    injured = prediction["predictions"]["injured"]
+
+    suggestions = []
+    if injured:
+        suggestions.append("Lower stake size or avoid aggressive overs until the injury flag turns back to No.")
+    else:
+        suggestions.append("Prioritize this player when injury is No and availability stays above the market average.")
+
+    if sport_key == "basketball_nba":
+        suggestions.append("NBA: favor points or combo props when recent form is strong and workload fatigue stays under control.")
+    elif sport_key == "baseball_mlb":
+        suggestions.append("MLB: look for hitter props when consistency is stable and avoid chasing lines during cold streaks.")
+    elif sport_key == "americanfootball_nfl":
+        suggestions.append("NFL: match the player role to the prop type, backing volume-based markets only when availability is strong.")
+    elif sport_key == "icehockey_nhl":
+        suggestions.append("NHL: lean toward shots or points markets when recent form is rising and underperformance risk is low.")
+    else:
+        suggestions.append("Use the selected sport context to compare recent form, role, and line movement before placing a bet.")
+
+    if recent_form >= 0.75 and consistency >= 0.65:
+        suggestions.append("Strong recent form plus solid consistency supports backing performance-related overs.")
+    elif underperformance_risk >= 0.5 or workload >= 0.75:
+        suggestions.append("High risk or fatigue suggests waiting for a better number or shifting to safer alternate lines.")
+    else:
+        suggestions.append("Balanced form and risk profile favor selective betting only when the implied odds still leave clear edge.")
+    return suggestions
 
 
 def _synthetic_players_for_sport(sport: dict, count: int) -> list[dict]:

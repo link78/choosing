@@ -84,6 +84,7 @@ class BettingApplication:
             "underperformance_risk": prediction["predictions"]["underperformance_risk"],
             "likely_to_score": prediction["predictions"]["likely_to_score"],
             "scoring_outlook": prediction["predictions"]["scoring_outlook"],
+            "suggestions": prediction["predictions"]["suggestions"],
             "odds_api_endpoints": prediction["predictions"]["odds_api_endpoints"],
             "player_profile": prediction["player_profile"],
             "flags": flags,
@@ -124,7 +125,7 @@ def render_text_report(report: dict) -> str:
             f"- Player {player['player_name']} ({player['player_id']}, {player['team']}, "
             f"{player['sport']['league']} {player['sport']['name']}): minutes {player['expected_minutes']}, "
             f"points {player['expected_points']}, injured {player['injured_label'].lower()}, {player['scoring_outlook'].lower()}, "
-            f"performance {player['expected_performance']}, flags {flags}"
+            f"performance {player['expected_performance']}, flags {flags}, suggestion {player['suggestions'][0]}"
         )
 
     lines.extend(["", "BETTING OPPORTUNITIES"])

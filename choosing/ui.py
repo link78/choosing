@@ -336,6 +336,7 @@ def render_home_page() -> str:
     function playerMarkup(payload) {{
       const predictionEndpoints = payload.predictions.odds_api_endpoints || [];
       const profileSports = payload.player_profile.odds_api_coverage?.sports || [];
+      const suggestions = payload.predictions.suggestions || [];
       return `
         <div class="profile-stack">
           <div class="profile-panel">
@@ -354,6 +355,9 @@ def render_home_page() -> str:
             </div>
             <div class="metric-grid">
               ${{predictionEndpoints.length ? listMarkup(predictionEndpoints, 'path') : '<div class="metric"><strong>Odds API endpoints</strong><br>No data</div>'}}
+            </div>
+            <div class="metric-grid">
+              ${{suggestions.length ? suggestions.map((item) => `<div class="metric"><strong>Suggestion</strong><br>${{item}}</div>`).join("") : ""}}
             </div>
           </div>
           <div class="profile-panel">
@@ -400,6 +404,7 @@ def render_home_page() -> str:
                     Performance: ${{player.expected_performance}}<br>
                     Points: ${{player.expected_points}}<br>
                     Outlook: ${{player.scoring_outlook}}<br>
+                    Suggestion: ${{player.suggestions[0]}}<br>
                     <button
                       type="button"
                       class="top-player-button"
