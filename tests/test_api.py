@@ -52,6 +52,9 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("The Odds API endpoints", response["raw_body"])
         self.assertIn("/sports/{sport}/odds", response["raw_body"])
         self.assertIn("/historical/sports/{sport}/odds", response["raw_body"])
+        self.assertIn("The Odds API sports", response["raw_body"])
+        self.assertIn("NFL", response["raw_body"])
+        self.assertIn("Olympics", response["raw_body"])
 
     def test_app_metadata_endpoint_returns_machine_readable_json(self):
         response = request("/app.json")
@@ -66,6 +69,8 @@ class PredictionApiTests(unittest.TestCase):
             response["body"]["upstream_endpoints"]["the_odds_api"][1]["path"],
             "/sports/{sport}/odds",
         )
+        self.assertEqual(response["body"]["upstream_sports"]["the_odds_api"][0]["name"], "NFL")
+        self.assertEqual(response["body"]["upstream_sports"]["the_odds_api"][-1]["name"], "Olympics")
         self.assertEqual(response["body"]["endpoints"]["game_edge"], "/game/{id}/edge")
 
     def test_health_endpoint_reports_source_modes(self):
@@ -157,6 +162,14 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("fantasy_sports_signals", response["body"])
         self.assertIn("media_broadcast", response["body"]["source_snapshots"])
         self.assertIn("fantasy_sports_api", response["body"]["source_snapshots"])
+        self.assertIn("odds_api", response["body"]["source_snapshots"])
+        self.assertEqual(response["body"]["odds_api_catalog"]["provider"], "The Odds API")
+        self.assertEqual(response["body"]["odds_api_catalog"]["sports"][0]["name"], "NFL")
+        self.assertEqual(response["body"]["player_profile"]["odds_api_coverage"]["sports"][-1]["name"], "Olympics")
+        self.assertEqual(
+            response["body"]["player_profile"]["computation_data"]["odds_api_endpoints"][1]["path"],
+            "/sports/{sport}/odds",
+        )
 
     def test_player_prediction_endpoint_supports_player_name_and_team_lookup(self):
         response = request("/player/Stephen%20Curry/prediction?team=Golden%20State%20Warriors")

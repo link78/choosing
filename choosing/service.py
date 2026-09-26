@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from .catalog import ODDS_API_ENDPOINTS, ODDS_API_SPORTS
 from .data_sources import (
     FantasySportsAPIClient,
     MediaBroadcastClient,
@@ -47,6 +48,7 @@ class PredictionService:
         payload["team"] = sports_data["team"]
         payload["injury_status"] = sports_data.get("injury_status", "Unknown")
         payload["player_profile"] = _build_player_profile(payload, player_inputs)
+        payload["odds_api_catalog"] = _odds_api_catalog()
         payload["source_snapshots"] = {
             "sports_data_io": {
                 "mode": sports_data.get("source_mode", "fallback"),
@@ -67,6 +69,11 @@ class PredictionService:
                 "fantasy_projection": round(fantasy_data["fantasy_projection"], 1),
                 "fantasy_value_rating": round(fantasy_data["fantasy_value_rating"], 3),
                 "ownership_projection": round(fantasy_data["ownership_projection"], 3),
+            },
+            "odds_api": {
+                "mode": self.odds_client.source_status()["mode"],
+                "endpoints": _odds_api_catalog()["endpoints"],
+                "sports": _odds_api_catalog()["sports"],
             },
         }
         return payload
@@ -193,6 +200,7 @@ def _build_player_profile(prediction: dict, sports_data: dict) -> dict:
         "risk_level": risk_level,
         "projected_role": "Featured scorer" if expected_minutes >= 32 or expected_points >= 24 else "Rotation scorer",
         "injury_status": sports_data.get("injury_status", "Unknown"),
+        "odds_api_coverage": _odds_api_catalog(),
         "computation_data": {
             "recent_form": prediction["player_signals"]["recent_form"],
             "consistency": prediction["player_signals"]["consistency"],
@@ -209,5 +217,15 @@ def _build_player_profile(prediction: dict, sports_data: dict) -> dict:
             "expected_minutes": expected_minutes,
             "expected_points": expected_points,
             "source_mode": sports_data.get("source_mode", "fallback"),
+            "odds_api_endpoints": _odds_api_catalog()["endpoints"],
+            "odds_api_sports": _odds_api_catalog()["sports"],
         },
+    }
+
+
+def _odds_api_catalog() -> dict:
+    return {
+        "provider": "The Odds API",
+        "endpoints": [dict(entry) for entry in ODDS_API_ENDPOINTS],
+        "sports": [dict(entry) for entry in ODDS_API_SPORTS],
     }

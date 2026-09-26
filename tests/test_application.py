@@ -49,6 +49,7 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertIn("player_profile", report["player_cards"][0])
         self.assertIn("readiness_score", report["player_cards"][0]["player_profile"])
         self.assertIn("injury_status", report["player_cards"][0]["player_profile"])
+        self.assertEqual(report["player_cards"][0]["player_profile"]["odds_api_coverage"]["sports"][0]["name"], "NFL")
         self.assertGreaterEqual(
             report["player_cards"][0]["player_profile"]["computation_data"]["fantasy_value_rating"],
             0,

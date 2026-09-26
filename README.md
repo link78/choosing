@@ -43,7 +43,7 @@ The repository still includes the underlying HTTP prediction utilities:
 
 - `GET /player/{id}/prediction` supports player ids or player names, plus optional `team=...`, and includes predicted points
   and a computed `player_profile`
-  with injury status and computation/source details
+  with injury status, computation/source details, and embedded The Odds API endpoint and sport coverage data
 - `GET /game/{id}/edge` supports game ids or team names
 - `GET /lookup/players?query={name}`
 - `GET /lookup/teams?query={team}`
@@ -59,6 +59,21 @@ The home dashboard and `/app.json` also display the tracked The Odds API endpoin
 - `/sports/{sport}/events/{eventId}/odds`
 - `/sports/{sport}/scores`
 - `/historical/sports/{sport}/odds`
+
+The displayed The Odds API sport coverage includes:
+
+- NFL
+- MLB
+- NBA
+- NHL
+- College Football
+- College Basketball
+- PGA / Golf
+- NASCAR
+- Soccer
+- UFC / MMA
+- Tennis
+- Olympics
 
 ## Live API configuration
 

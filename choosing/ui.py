@@ -2,17 +2,8 @@ from __future__ import annotations
 
 import json
 
+from .catalog import ODDS_API_ENDPOINTS, ODDS_API_SPORTS
 from .data_sources import search_players, search_teams
-
-
-ODDS_API_ENDPOINTS = [
-    {"name": "Sports list", "path": "/sports"},
-    {"name": "Current odds", "path": "/sports/{sport}/odds"},
-    {"name": "Event list", "path": "/sports/{sport}/events"},
-    {"name": "Event odds", "path": "/sports/{sport}/events/{eventId}/odds"},
-    {"name": "Scores", "path": "/sports/{sport}/scores"},
-    {"name": "Historical odds", "path": "/historical/sports/{sport}/odds"},
-]
 
 
 def app_metadata() -> dict:
@@ -22,6 +13,9 @@ def app_metadata() -> dict:
         "data_sources": ["SportsDataIO", "Media & Broadcast", "Fantasy Sports API", "The Odds API"],
         "upstream_endpoints": {
             "the_odds_api": ODDS_API_ENDPOINTS,
+        },
+        "upstream_sports": {
+            "the_odds_api": ODDS_API_SPORTS,
         },
         "endpoints": {
             "health": "/health",
@@ -44,6 +38,13 @@ def render_home_page() -> str:
             f'<span class="muted">{entry["path"]}</span></div>'
         )
         for entry in metadata["upstream_endpoints"]["the_odds_api"]
+    )
+    odds_sport_markup = "\n".join(
+        (
+            f'<div class="metric"><strong>{entry["name"]}</strong><br>'
+            f'<span class="muted">{entry["key"]}</span></div>'
+        )
+        for entry in metadata["upstream_sports"]["the_odds_api"]
     )
     player_options = "\n".join(
         f'<option value="{player["name"]}">{player["team"]}</option>' for player in search_players()
@@ -290,11 +291,23 @@ def render_home_page() -> str:
           {odds_endpoint_markup}
         </div>
       </article>
+      <article class="card">
+        <h3>The Odds API sports</h3>
+        <div class="metric-grid">
+          {odds_sport_markup}
+        </div>
+      </article>
     </section>
   </main>
 
   <script>
     const byId = (id) => document.getElementById(id);
+
+    function listMarkup(items, keyField) {{
+      return items.map((item) => `
+        <div class="metric"><strong>${{item.name}}</strong><br>${{item[keyField]}}</div>
+      `).join("");
+    }}
 
     function playerMarkup(payload) {{
       return `
@@ -321,6 +334,18 @@ def render_home_page() -> str:
               <div class="metric"><strong>Risk level</strong><br>${{payload.player_profile.risk_level}}</div>
               <div class="metric"><strong>Role</strong><br>${{payload.player_profile.projected_role}}</div>
               <div class="metric"><strong>Data mode</strong><br>${{payload.player_profile.computation_data.source_mode}}</div>
+            </div>
+          </div>
+          <div class="profile-panel">
+            <h3>Odds API endpoint data</h3>
+            <div class="metric-grid">
+              ${{listMarkup(payload.odds_api_catalog.endpoints, 'path')}}
+            </div>
+          </div>
+          <div class="profile-panel">
+            <h3>Odds API sports coverage</h3>
+            <div class="metric-grid">
+              ${{listMarkup(payload.player_profile.odds_api_coverage.sports, 'key')}}
             </div>
           </div>
         </div>
