@@ -385,5 +385,54 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIsNotNone(summary["body"]["brier_score"])
 
 
+    def test_odds_api_endpoints_return_fallback_data_without_key(self):
+        with patch.dict(os.environ, {}, clear=True):
+            sports = request("/sports")
+            self.assertEqual(sports["status"], "200 OK")
+            self.assertEqual(sports["body"]["source_mode"], "fallback")
+            self.assertIn("basketball_nba", [entry["key"] for entry in sports["body"]["data"]])
+
+            for path in ("/sports/basketball_nba/odds", "/sports/basketball_nba/events", "/sports/basketball_nba/scores"):
+                response = request(path)
+                self.assertEqual(response["status"], "200 OK", path)
+                self.assertTrue(response["body"]["data"], path)
+                self.assertEqual(response["body"]["sport"], "basketball_nba")
+            odds = request("/sports/basketball_nba/odds")["body"]["data"]
+            self.assertEqual(odds[0]["bookmakers"][0]["markets"][0]["key"], "h2h")
+
+            event_id = request("/sports/basketball_nba/events")["body"]["data"][0]["id"]
+            event_odds = request(f"/sports/basketball_nba/events/{event_id}/odds")
+            self.assertEqual(event_odds["status"], "200 OK")
+            self.assertEqual(event_odds["body"]["data"]["id"], event_id)
+            self.assertEqual(request("/sports/basketball_nba/events/missing/odds")["status"], "404 Not Found")
+
+            historical = request("/historical/sports/basketball_nba/odds?date=2026-01-10T00:00:00Z")
+            self.assertEqual(historical["status"], "200 OK")
+            self.assertEqual(historical["body"]["data"]["timestamp"], "2026-01-10T00:00:00Z")
+            self.assertTrue(historical["body"]["data"]["data"])
+
+    def test_odds_api_endpoints_validate_inputs(self):
+        self.assertEqual(request("/sports/bad%20key/odds")["status"], "400 Bad Request")
+        self.assertEqual(request("/sports/basketball_nba/events/bad%2Fid/odds")["status"], "400 Bad Request")
+        self.assertEqual(request("/sports/basketball_nba/scores?daysFrom=7")["status"], "400 Bad Request")
+
+    def test_odds_api_endpoints_proxy_live_data_when_configured(self):
+        calls = []
+
+        def fetcher(url, headers=None):
+            calls.append(url)
+            return [{"id": "live-1", "home_team": "A", "away_team": "B"}]
+
+        self.api_module.service.odds_client.fetcher = fetcher
+        with patch.dict(os.environ, {"ODDS_API_KEY": "test-key"}, clear=True):
+            response = request("/sports/basketball_nba/odds?bookmakers=fanduel&ignored=1")
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["body"]["source_mode"], "live")
+        self.assertEqual(response["body"]["data"][0]["id"], "live-1")
+        self.assertNotIn("apiKey", response["body"]["params"])
+        self.assertIn("/sports/basketball_nba/odds?", calls[0])
+        self.assertIn("bookmakers=fanduel", calls[0])
+        self.assertNotIn("ignored", calls[0])
+
 if __name__ == "__main__":
     unittest.main()

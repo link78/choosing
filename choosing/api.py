@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from urllib.parse import parse_qs, unquote
 
 from .elo import TENNIS_SURFACES, normalize_surface
@@ -160,6 +161,24 @@ def resolve_server_port() -> int:
     if not 1 <= port <= 65535:
         raise ValueError("PORT must be between 1 and 65535")
     return port
+
+
+ODDS_SPORT_PATTERN = re.compile(r"(?:[a-z0-9]+(?:_[a-z0-9]+)*(?:_\*)?|upcoming)")
+ODDS_EVENT_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,128}")
+
+
+def _match_odds_api_route(path: str) -> tuple[str, str | None, str | None] | None:
+    """Map a The Odds API style path to (endpoint, sport, event_id)."""
+    parts = [unquote(part) for part in path.strip("/").split("/")]
+    if parts == ["sports"]:
+        return "sports", None, None
+    if len(parts) == 3 and parts[0] == "sports" and parts[2] in {"odds", "events", "scores"}:
+        return parts[2], parts[1], None
+    if len(parts) == 5 and parts[0] == "sports" and parts[2] == "events" and parts[4] == "odds":
+        return "event_odds", parts[1], parts[3]
+    if len(parts) == 4 and parts[:2] == ["historical", "sports"] and parts[3] == "odds":
+        return "historical_odds", parts[2], None
+    return None
 
 
 def run_server() -> None:
@@ -508,6 +527,30 @@ def app(environ, start_response):
             return json_response(start_response, "400 Bad Request", {"error": "invalid game edge request"})
         except Exception:
             return json_response(start_response, "500 Internal Server Error", {"error": "unable to generate game edge"})
+        return json_response(start_response, "200 OK", payload)
+
+    odds_route = _match_odds_api_route(path)
+    if odds_route:
+        endpoint, sport, event_id = odds_route
+        if sport is not None and not ODDS_SPORT_PATTERN.fullmatch(sport):
+            return json_response(start_response, "400 Bad Request", {"error": "invalid sport key"})
+        if event_id is not None and not ODDS_EVENT_ID_PATTERN.fullmatch(event_id):
+            return json_response(start_response, "400 Bad Request", {"error": "invalid event id"})
+        params = {}
+        for key, values in query.items():
+            value = values[0].strip() if values else ""
+            if len(value) > 256:
+                return json_response(start_response, "400 Bad Request", {"error": f"{key} is too long"})
+            params[key] = value
+        if "daysFrom" in params:
+            if not params["daysFrom"].isdigit() or not 1 <= int(params["daysFrom"]) <= 3:
+                return json_response(start_response, "400 Bad Request", {"error": "daysFrom must be between 1 and 3"})
+        try:
+            payload = service.odds_client.fetch_endpoint(endpoint, sport, event_id, params)
+        except Exception:
+            return json_response(start_response, "500 Internal Server Error", {"error": "unable to load odds data"})
+        if payload["data"] is None:
+            return json_response(start_response, "404 Not Found", {"error": "event not found"})
         return json_response(start_response, "200 OK", payload)
 
     return json_response(start_response, "404 Not Found", {"error": "Not found"})

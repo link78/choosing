@@ -32,9 +32,21 @@ def app_metadata() -> dict:
             "player_lookup": "/lookup/players?query={name}",
             "team_lookup": "/lookup/teams?query={team}",
             "app_metadata": "/app.json",
+            "odds_sports": "/sports",
+            "odds_current": "/sports/{sport}/odds",
+            "odds_events": "/sports/{sport}/events",
+            "odds_event_odds": "/sports/{sport}/events/{eventId}/odds",
+            "odds_scores": "/sports/{sport}/scores",
+            "odds_historical": "/historical/sports/{sport}/odds?date=YYYY-MM-DDTHH:MM:SSZ",
         },
         "advisory_only": True,
     }
+
+
+def _odds_endpoint_example(path: str, sport: str = "basketball_nba") -> str:
+    if "{eventId}" in path:
+        return f"/sports/{sport}/events"
+    return path.replace("{sport}", sport)
 
 
 def render_home_page() -> str:
@@ -43,7 +55,9 @@ def render_home_page() -> str:
     odds_endpoint_markup = "\n".join(
         (
             f'<div class="metric"><strong>{entry["name"]}</strong><br>'
-            f'<span class="muted">{entry["path"]}</span></div>'
+            f'<span class="muted">{entry["path"]}</span><br>'
+            f'<a href="{_odds_endpoint_example(entry["path"])}" target="_blank" rel="noopener">'
+            f'{"Find event IDs" if "{eventId}" in entry["path"] else "View data"}</a></div>'
         )
         for entry in metadata["upstream_endpoints"]["the_odds_api"]
     )
