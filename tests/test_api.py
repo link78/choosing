@@ -52,6 +52,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("americanfootball_nfl", response["raw_body"])
         self.assertIn("Player profile", response["raw_body"])
         self.assertIn("Injury status", response["raw_body"])
+        self.assertIn("Prediction confidence", response["raw_body"])
+        self.assertIn("Edge quality", response["raw_body"])
         self.assertIn("Media &amp; Broadcast", response["raw_body"])
         self.assertIn("Fantasy Sports API", response["raw_body"])
         self.assertIn("The Odds API endpoints", response["raw_body"])
@@ -163,6 +165,12 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("suggestions", predictions)
         self.assertIn("likely_to_score", predictions)
         self.assertIn("scoring_outlook", predictions)
+        self.assertIn("expected_points_range", predictions)
+        self.assertIn("expected_minutes_range", predictions)
+        self.assertIn("expected_performance_range", predictions)
+        self.assertIn("prediction_confidence", predictions)
+        self.assertIn("confidence_band", predictions)
+        self.assertIn("feature_tracking", predictions)
         self.assertIn("player_profile", response["body"])
         self.assertIn("computation_data", response["body"]["player_profile"])
         self.assertIn("injury_status", response["body"])
@@ -188,6 +196,9 @@ class PredictionApiTests(unittest.TestCase):
             response["body"]["player_profile"]["computation_data"]["odds_api_endpoints"][1]["path"],
             "/sports/{sport}/odds",
         )
+        self.assertIn("recent_form_l3", response["body"]["player_profile"]["computation_data"])
+        self.assertIn("prediction_confidence", response["body"]["player_profile"])
+        self.assertIn("feature_tracking", response["body"]["player_profile"])
 
     def test_player_prediction_endpoint_supports_player_name_and_team_lookup(self):
         response = request("/player/Stephen%20Curry/prediction?team=Golden%20State%20Warriors")
@@ -197,7 +208,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["player_name"], "Stephen Curry")
         self.assertEqual(response["body"]["team"], "Golden State Warriors")
         self.assertIn(response["body"]["player_profile"]["risk_level"], {"Low", "Moderate", "High"})
-        self.assertIn(response["body"]["injury_status"], {"Available", "Monitor", "Questionable", "Out"})
+        self.assertIn(response["body"]["injury_status"], {"Available", "Probable", "Limited", "Questionable", "Out"})
 
     def test_player_prediction_endpoint_supports_selected_sport(self):
         response = request("/player/Stephen%20Curry/prediction?team=Golden%20State%20Warriors&sport=americanfootball_nfl")
@@ -219,6 +230,7 @@ class PredictionApiTests(unittest.TestCase):
         self.assertGreater(response["body"]["predictions"]["expected_points"], 0)
         self.assertEqual(response["body"]["predictions"]["injured_label"], "No")
         self.assertGreaterEqual(len(response["body"]["predictions"]["suggestions"]), 1)
+        self.assertGreaterEqual(response["body"]["predictions"]["prediction_confidence"], 0)
 
     def test_top_players_endpoint_returns_ranked_players_for_selected_sport(self):
         response = request("/players/top?sport=basketball_nba&limit=10")
@@ -230,6 +242,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertIn("/player/", response["body"]["top_players"][0]["player_prediction_path"])
         self.assertIn("injured_label", response["body"]["top_players"][0])
         self.assertIn("suggestions", response["body"]["top_players"][0])
+        self.assertIn("prediction_confidence", response["body"]["top_players"][0])
+        self.assertIn("expected_points_range", response["body"]["top_players"][0])
         self.assertGreaterEqual(
             response["body"]["top_players"][0]["expected_performance"],
             response["body"]["top_players"][-1]["expected_performance"],
@@ -255,6 +269,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["betting_edge"]["recommended_action"], "bet")
         self.assertEqual(response["body"]["betting_edge"]["recommended_stake"], "medium")
         self.assertIn("confidence", response["body"]["betting_edge"])
+        self.assertIn("edge_quality", response["body"]["betting_edge"])
+        self.assertIn("win_probability_range", response["body"]["team_prediction"])
         self.assertIn("context_signals", response["body"])
         self.assertIn("media_broadcast", response["body"]["source_snapshots"])
         self.assertIn("fantasy_sports_api", response["body"]["source_snapshots"])
@@ -270,6 +286,8 @@ class PredictionApiTests(unittest.TestCase):
         self.assertEqual(response["body"]["market_signals"]["current_odds"], 105)
         self.assertTrue(response["body"]["market_signals"]["steam_move"])
         self.assertEqual(response["body"]["market_signals"]["closing_line_value"], 0.05)
+        self.assertIn("book_disagreement", response["body"]["market_signals"])
+        self.assertIn("market_stability", response["body"]["market_signals"])
         self.assertIn("expected_points", response["body"]["team_prediction"])
 
     def test_game_edge_endpoint_rejects_invalid_odds(self):

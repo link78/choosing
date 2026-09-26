@@ -78,6 +78,8 @@ class LiveDataSourceTests(unittest.TestCase):
         self.assertEqual(payload["source_mode"], "live")
         self.assertGreater(payload["recent_form"], 0)
         self.assertLess(payload["injury_risk"], 0.5)
+        self.assertIn("recent_form_l3", payload)
+        self.assertIn("source_confidence", payload)
 
     def test_odds_api_client_uses_live_market_when_configured(self):
         with patch.dict(os.environ, {"ODDS_API_KEY": "test-key"}, clear=False):
@@ -89,6 +91,8 @@ class LiveDataSourceTests(unittest.TestCase):
         self.assertEqual(payload["source_mode"], "live")
         self.assertEqual(payload["current_odds"], -115)
         self.assertIn("implied_probability", payload)
+        self.assertIn("book_disagreement", payload)
+        self.assertIn("market_source_confidence", payload)
 
     def test_media_client_uses_live_context_when_configured(self):
         with patch.dict(os.environ, {"MEDIA_BROADCAST_API_KEY": "test-key"}, clear=False):

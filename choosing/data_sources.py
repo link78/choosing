@@ -97,21 +97,99 @@ def _status_to_risk(status: str | None) -> float | None:
     normalized = _normalize(status)
     if any(token in normalized for token in {"out", "suspended", "inactive"}):
         return 0.9
+    if any(token in normalized for token in {"limited", "minutes restriction", "game time"}):
+        return 0.5
     if any(token in normalized for token in {"doubtful", "questionable"}):
         return 0.65
     if any(token in normalized for token in {"probable", "day to day"}):
-        return 0.35
+        return 0.3
     return 0.15
 
 
 def _risk_to_status(injury_risk: float) -> str:
     if injury_risk >= 0.8:
         return "Out"
-    if injury_risk >= 0.6:
+    if injury_risk >= 0.5:
         return "Questionable"
     if injury_risk >= 0.35:
-        return "Monitor"
+        return "Limited"
+    if injury_risk >= 0.2:
+        return "Probable"
     return "Available"
+
+
+def _form_score(recent_average: float, baseline_average: float) -> float:
+    return clamp(0.5 + ((recent_average - baseline_average) / max(baseline_average, 8)) * 0.3, 0.05, 0.99)
+
+
+def _window_average(values: list[float], window: int, default: float) -> float:
+    sample = values[:window]
+    return mean(sample) if sample else default
+
+
+def _build_recent_form_windows(player_id: str, recent_form: float, points: list[float] | None = None, baseline_points: float | None = None) -> dict:
+    if points and baseline_points is not None:
+        form_l3 = _form_score(_window_average(points, 3, baseline_points), baseline_points)
+        form_l5 = _form_score(_window_average(points, 5, baseline_points), baseline_points)
+        form_l10 = _form_score(_window_average(points, 10, baseline_points), baseline_points)
+    else:
+        form_l3 = clamp(recent_form + stable_float(f"{player_id}:form_l3", -0.08, 0.12), 0.05, 0.99)
+        form_l5 = clamp(recent_form + stable_float(f"{player_id}:form_l5", -0.05, 0.08), 0.05, 0.99)
+        form_l10 = clamp(recent_form + stable_float(f"{player_id}:form_l10", -0.04, 0.05), 0.05, 0.99)
+    return {
+        "recent_form_l3": round(form_l3, 3),
+        "recent_form_l5": round(form_l5, 3),
+        "recent_form_l10": round(form_l10, 3),
+    }
+
+
+def _infer_projected_role(team_context: float, fantasy_projection: float, usage_trend: float) -> str:
+    if fantasy_projection >= 30 or (team_context >= 0.7 and usage_trend >= 0.08):
+        return "Primary option"
+    if fantasy_projection >= 22 or team_context >= 0.58:
+        return "Starter"
+    if fantasy_projection >= 16:
+        return "Rotation"
+    return "Bench spark"
+
+
+def _extract_rest_days(recent_games: list[dict], fallback: float) -> float:
+    for field in ("DaysRest", "RestDays"):
+        values = [_safe_float(game.get(field)) for game in recent_games]
+        values = [value for value in values if value is not None]
+        if values:
+            return clamp(values[0], 0, 7)
+    return clamp(fallback, 0, 7)
+
+
+def _finalize_player_payload(payload: dict) -> dict:
+    payload["source_confidence"] = round(clamp(payload.get("source_confidence", 0.66), 0.05, 0.99), 3)
+    payload["data_freshness"] = round(clamp(payload.get("data_freshness", 0.78), 0.05, 0.99), 3)
+    payload["rest_days"] = round(clamp(payload.get("rest_days", 1.0), 0, 7), 2)
+    payload["usage_trend"] = round(clamp(payload.get("usage_trend", 0.0), -1, 1), 3)
+    payload["home_split"] = round(clamp(payload.get("home_split", payload.get("recent_form", 0.5)), 0.05, 0.99), 3)
+    payload["away_split"] = round(clamp(payload.get("away_split", payload.get("recent_form", 0.5)), 0.05, 0.99), 3)
+    payload["opponent_split"] = round(clamp(payload.get("opponent_split", payload.get("recent_form", 0.5)), 0.05, 0.99), 3)
+    payload["lineup_support"] = round(clamp(payload.get("lineup_support", 0.6), 0.05, 0.99), 3)
+    payload["teammate_absences"] = round(max(payload.get("teammate_absences", 0.0), 0.0), 2)
+    payload["injury_days_out"] = round(max(payload.get("injury_days_out", 0.0), 0.0), 2)
+    if not payload.get("projected_role"):
+        payload["projected_role"] = _infer_projected_role(
+            payload.get("team_context", 0.5),
+            payload.get("fantasy_projection", 20.0),
+            payload.get("usage_trend", 0.0),
+        )
+    if "recent_form_l3" not in payload or "recent_form_l5" not in payload or "recent_form_l10" not in payload:
+        payload.update(_build_recent_form_windows(payload["player_id"], payload.get("recent_form", 0.5)))
+    return payload
+
+
+def _finalize_market_payload(payload: dict) -> dict:
+    payload["book_disagreement"] = round(clamp(payload.get("book_disagreement", 0.05), 0, 1), 3)
+    payload["market_source_confidence"] = round(clamp(payload.get("market_source_confidence", 0.72), 0.05, 0.99), 3)
+    payload["consensus_spread"] = round(payload.get("consensus_spread", 0.0), 3)
+    payload["historical_closing_line_value"] = round(payload.get("historical_closing_line_value", payload.get("closing_line_value", 0.0)), 3)
+    return payload
 
 
 def _http_get_json(url: str, headers: dict[str, str] | None = None, timeout: float = 5.0):
@@ -216,11 +294,12 @@ class SportsDataIOClient:
         overrides = overrides or {}
         player = self.resolve_player(player_id, overrides.get("team"), overrides.get("sport"))
         injury_risk = overrides.get("injury_risk", stable_float(f"{player['id']}:injury", 0.05, 0.55))
+        recent_form = overrides.get("recent_form", stable_float(f"{player['id']}:form", 0.4, 0.95))
         payload = {
             "player_id": player["id"],
             "player_name": player["name"],
             "team": player["team"],
-            "recent_form": overrides.get("recent_form", stable_float(f"{player['id']}:form", 0.4, 0.95)),
+            "recent_form": recent_form,
             "workload": overrides.get("workload", stable_float(f"{player['id']}:workload", 0.2, 0.9)),
             "injury_risk": injury_risk,
             "injury_status": overrides.get("injury_status", _risk_to_status(injury_risk)),
@@ -238,14 +317,26 @@ class SportsDataIOClient:
                 stable_float(f"{player['id']}:instability", 0.05, 0.6),
             ),
             "media_sentiment": overrides.get("media_sentiment", stable_float(f"{player['id']}:media", 0.3, 0.8)),
+            "rest_days": overrides.get("rest_days", stable_float(f"{player['id']}:rest", 0, 4)),
+            "usage_trend": overrides.get("usage_trend", stable_float(f"{player['id']}:usage", -0.15, 0.18)),
+            "home_split": overrides.get("home_split", clamp(recent_form + stable_float(f"{player['id']}:home", -0.06, 0.1), 0.05, 0.99)),
+            "away_split": overrides.get("away_split", clamp(recent_form + stable_float(f"{player['id']}:away", -0.08, 0.08), 0.05, 0.99)),
+            "opponent_split": overrides.get("opponent_split", clamp(recent_form + stable_float(f"{player['id']}:opponent", -0.07, 0.07), 0.05, 0.99)),
+            "source_confidence": overrides.get("source_confidence", stable_float(f"{player['id']}:source", 0.58, 0.86)),
+            "data_freshness": overrides.get("data_freshness", stable_float(f"{player['id']}:freshness", 0.6, 0.92)),
+            "teammate_absences": overrides.get("teammate_absences", round(stable_float(f"{player['id']}:absences", 0, 3), 2)),
+            "lineup_support": overrides.get("lineup_support", stable_float(f"{player['id']}:lineup", 0.35, 0.92)),
+            "injury_days_out": overrides.get("injury_days_out", 0.0),
+            "projected_role": overrides.get("projected_role"),
         }
+        payload.update(_build_recent_form_windows(player["id"], recent_form))
         live_payload = self._fetch_live_player_context(player)
         if live_payload:
             payload.update({key: value for key, value in live_payload.items() if value is not None})
             payload["source_mode"] = "live"
         else:
             payload["source_mode"] = "fallback"
-        return payload
+        return _finalize_player_payload(payload)
 
     def fetch_game_context(self, game_id: str, overrides: dict | None = None) -> dict:
         overrides = overrides or {}
@@ -375,7 +466,7 @@ class SportsDataIOClient:
         season_games = _safe_float(season_stats.get("Games"), max(len(recent_games), 1)) or 1
         baseline_points = season_points / max(season_games, 1)
         recent_points = mean(points) if points else baseline_points
-        recent_form = clamp(0.5 + ((recent_points - baseline_points) / max(baseline_points, 8)) * 0.3, 0.05, 0.99)
+        recent_form = _form_score(recent_points, baseline_points)
 
         workload = clamp((mean(minutes) if minutes else _safe_float(season_stats.get("Minutes"), 30.0)) / 40, 0.05, 0.99)
         consistency = clamp(
@@ -392,6 +483,9 @@ class SportsDataIOClient:
         injury_risk = _status_to_risk(injury_status)
         if injury_risk is None:
             injury_risk = clamp((1 - consistency) * 0.45 + workload * 0.2, 0.05, 0.8)
+        rest_days = _extract_rest_days(recent_games, stable_float(f"{player['id']}:rest_live", 0, 3))
+        usage_trend = clamp((_window_average(points, 3, recent_points) - baseline_points) / max(baseline_points or 12, 12), -1, 1)
+        form_windows = _build_recent_form_windows(player["id"], recent_form, points, baseline_points)
         return {
             "recent_form": recent_form,
             "expected_points": recent_points,
@@ -401,6 +495,22 @@ class SportsDataIOClient:
             "consistency": consistency,
             "availability": clamp(1 - injury_risk * 0.8, 0.05, 0.99),
             "fouls_cards": clamp((mean(fouls) if fouls else 2.0) / 6, 0, 0.99),
+            "rest_days": rest_days,
+            "usage_trend": usage_trend,
+            "home_split": clamp(form_windows["recent_form_l5"] + 0.03, 0.05, 0.99),
+            "away_split": clamp(form_windows["recent_form_l10"] - 0.02, 0.05, 0.99),
+            "opponent_split": clamp((form_windows["recent_form_l3"] + form_windows["recent_form_l10"]) / 2, 0.05, 0.99),
+            "source_confidence": clamp(0.62 + min(len(recent_games), 5) * 0.06, 0.05, 0.99),
+            "data_freshness": clamp(0.65 + min(len(recent_games), 5) * 0.05, 0.05, 0.99),
+            "teammate_absences": 0.0,
+            "lineup_support": clamp(consistency * 0.55 + recent_form * 0.45, 0.05, 0.99),
+            "injury_days_out": 3.0 if injury_risk >= 0.8 else (1.0 if injury_risk >= 0.5 else 0.0),
+            "projected_role": _infer_projected_role(
+                clamp(0.4 + recent_form * 0.3 + consistency * 0.3, 0.05, 0.99),
+                recent_points * 1.15,
+                usage_trend,
+            ),
+            **form_windows,
         }
 
     def _fetch_live_team_context(self, game: dict) -> dict | None:
@@ -495,6 +605,22 @@ class OddsAPIClient:
                 "closing_line_value",
                 clamp(stable_float(f"{game['game_id']}:clv", -0.08, 0.08), -0.15, 0.15),
             ),
+            "book_disagreement": overrides.get(
+                "book_disagreement",
+                stable_float(f"{game['game_id']}:disagreement", 0.01, 0.18),
+            ),
+            "consensus_spread": overrides.get(
+                "consensus_spread",
+                stable_float(f"{game['game_id']}:spread", -6, 6),
+            ),
+            "historical_closing_line_value": overrides.get(
+                "historical_closing_line_value",
+                clamp(stable_float(f"{game['game_id']}:history_clv", -0.06, 0.09), -0.15, 0.15),
+            ),
+            "market_source_confidence": overrides.get(
+                "market_source_confidence",
+                stable_float(f"{game['game_id']}:market_source", 0.6, 0.9),
+            ),
         }
         live_payload = self._fetch_live_market(game)
         if live_payload:
@@ -502,7 +628,7 @@ class OddsAPIClient:
             payload["source_mode"] = "live"
         else:
             payload["source_mode"] = "fallback"
-        return payload
+        return _finalize_market_payload(payload)
 
     def _request(self, path: str, params: dict | None = None):
         if not self.api_key:
@@ -560,6 +686,7 @@ class OddsAPIClient:
             current_odds = prices[0]
             consensus_probability = clamp(mean(implied_probabilities), 0.02, 0.98)
             sharp_money_index = clamp(0.5 + (consensus_probability - 0.5) * 1.2, 0.05, 0.99)
+            book_disagreement = clamp((max(implied_probabilities) - min(implied_probabilities)) * 2.4, 0, 1)
             return {
                 "game_id": _slugify(f"{home}-vs-{away}"),
                 "team": home if normalized_team in _normalize(home) else away,
@@ -571,6 +698,10 @@ class OddsAPIClient:
                 "sharp_money_index": sharp_money_index,
                 "steam_move": len(set(prices)) > 1,
                 "closing_line_value": 0.0,
+                "book_disagreement": book_disagreement,
+                "consensus_spread": 0.0,
+                "historical_closing_line_value": 0.0,
+                "market_source_confidence": clamp(0.62 + min(len(prices), 4) * 0.08 - book_disagreement * 0.3, 0.05, 0.99),
                 "implied_probability": consensus_probability,
             }
         return None

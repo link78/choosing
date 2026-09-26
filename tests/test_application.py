@@ -35,6 +35,9 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertGreater(report["player_cards"][0]["expected_points"], 0)
         self.assertIn(report["player_cards"][0]["injured_label"], {"Yes", "No"})
         self.assertGreaterEqual(len(report["player_cards"][0]["suggestions"]), 1)
+        self.assertIn("expected_points_range", report["player_cards"][0])
+        self.assertIn("prediction_confidence", report["player_cards"][0])
+        self.assertIn("edge_quality", report["game_cards"][0]["recommendation"])
         self.assertIn("availability_risk", report["player_cards"][0]["flags"])
 
     def test_build_report_supports_player_names_and_team_names(self):
@@ -61,6 +64,8 @@ class BettingApplicationTests(unittest.TestCase):
             report["player_cards"][0]["player_profile"]["computation_data"]["fantasy_value_rating"],
             0,
         )
+        self.assertIn("prediction_confidence", report["player_cards"][0]["player_profile"])
+        self.assertIn("feature_tracking", report["player_cards"][0]["player_profile"])
         self.assertEqual(report["game_cards"][0]["game_id"], "warriors-lakers")
         self.assertIn("context_signals", report["game_cards"][0])
         self.assertEqual(report["portfolio_summary"]["highest_edge_game"], "warriors-lakers")
@@ -76,6 +81,8 @@ class BettingApplicationTests(unittest.TestCase):
         self.assertIn("points", rendered)
         self.assertRegex(rendered, r"injured yes|injured no")
         self.assertIn("suggestion", rendered)
+        self.assertIn("confidence", rendered)
+        self.assertIn("quality", rendered)
         self.assertRegex(rendered, r"likely to score|not likely to score")
         self.assertIn("Stephen Curry", rendered)
         self.assertIn("Golden State Warriors", rendered)

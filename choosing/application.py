@@ -76,14 +76,20 @@ class BettingApplication:
             "team": prediction["team"],
             "sport": prediction["sport"],
             "expected_minutes": prediction["predictions"]["expected_minutes"],
+            "expected_minutes_range": prediction["predictions"]["expected_minutes_range"],
             "expected_points": prediction["predictions"]["expected_points"],
+            "expected_points_range": prediction["predictions"]["expected_points_range"],
             "expected_performance": prediction["predictions"]["expected_performance"],
+            "expected_performance_range": prediction["predictions"]["expected_performance_range"],
             "injured": prediction["predictions"]["injured"],
             "injured_label": prediction["predictions"]["injured_label"],
             "availability_probability": prediction["predictions"]["availability_probability"],
+            "availability_tier": prediction["predictions"]["availability_tier"],
             "underperformance_risk": prediction["predictions"]["underperformance_risk"],
             "likely_to_score": prediction["predictions"]["likely_to_score"],
             "scoring_outlook": prediction["predictions"]["scoring_outlook"],
+            "prediction_confidence": prediction["predictions"]["prediction_confidence"],
+            "confidence_band": prediction["predictions"]["confidence_band"],
             "suggestions": prediction["predictions"]["suggestions"],
             "odds_api_endpoints": prediction["predictions"]["odds_api_endpoints"],
             "player_profile": prediction["player_profile"],
@@ -108,6 +114,7 @@ class BettingApplication:
                 "stake_label": edge["betting_edge"]["recommended_stake"],
                 "stake_amount": stake_amount,
                 "confidence": edge["betting_edge"]["confidence"],
+                "edge_quality": edge["betting_edge"]["edge_quality"],
             },
         }
 
@@ -124,8 +131,10 @@ def render_text_report(report: dict) -> str:
         lines.append(
             f"- Player {player['player_name']} ({player['player_id']}, {player['team']}, "
             f"{player['sport']['league']} {player['sport']['name']}): minutes {player['expected_minutes']}, "
-            f"points {player['expected_points']}, injured {player['injured_label'].lower()}, {player['scoring_outlook'].lower()}, "
-            f"performance {player['expected_performance']}, flags {flags}, suggestion {player['suggestions'][0]}"
+            f"points {player['expected_points']}, range {player['expected_points_range']['low']}-{player['expected_points_range']['high']}, "
+            f"injured {player['injured_label'].lower()}, {player['scoring_outlook'].lower()}, "
+            f"performance {player['expected_performance']}, confidence {player['confidence_band'].lower()}, "
+            f"flags {flags}, suggestion {player['suggestions'][0]}"
         )
 
     lines.extend(["", "BETTING OPPORTUNITIES"])
@@ -133,7 +142,7 @@ def render_text_report(report: dict) -> str:
         recommendation = game["recommendation"]
         lines.append(
             f"- Game {game['game_id']}: {recommendation['action']} / {recommendation['stake_label']} "
-            f"(${recommendation['stake_amount']:.2f}), edge {game['betting_edge']['edge']}"
+            f"(${recommendation['stake_amount']:.2f}), edge {game['betting_edge']['edge']}, quality {recommendation['edge_quality'].lower()}"
         )
 
     summary = report["portfolio_summary"]

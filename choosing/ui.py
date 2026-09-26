@@ -346,12 +346,17 @@ def render_home_page() -> str:
               <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
               <div class="metric"><strong>Sport</strong><br>${{payload.sport.name}} · ${{payload.sport.league}}</div>
               <div class="metric"><strong>Minutes</strong><br>${{payload.predictions.expected_minutes}}</div>
+              <div class="metric"><strong>Minutes range</strong><br>${{payload.predictions.expected_minutes_range.low}} - ${{payload.predictions.expected_minutes_range.high}}</div>
               <div class="metric"><strong>Points</strong><br>${{payload.predictions.expected_points}}</div>
+              <div class="metric"><strong>Points range</strong><br>${{payload.predictions.expected_points_range.low}} - ${{payload.predictions.expected_points_range.high}}</div>
               <div class="metric"><strong>Injured</strong><br>${{payload.predictions.injured_label}}</div>
               <div class="metric"><strong>Scoring outlook</strong><br>${{payload.predictions.scoring_outlook}}</div>
               <div class="metric"><strong>Performance</strong><br>${{payload.predictions.expected_performance}}</div>
+              <div class="metric"><strong>Performance range</strong><br>${{payload.predictions.expected_performance_range.low}} - ${{payload.predictions.expected_performance_range.high}}</div>
               <div class="metric"><strong>Availability</strong><br>${{payload.predictions.availability_probability}}</div>
+              <div class="metric"><strong>Availability tier</strong><br>${{payload.predictions.availability_tier}}</div>
               <div class="metric"><strong>Underperformance risk</strong><br>${{payload.predictions.underperformance_risk}}</div>
+              <div class="metric"><strong>Prediction confidence</strong><br>${{payload.predictions.prediction_confidence}} · ${{payload.predictions.confidence_band}}</div>
             </div>
             <div class="metric-grid">
               ${{predictionEndpoints.length ? listMarkup(predictionEndpoints, 'path') : '<div class="metric"><strong>Odds API endpoints</strong><br>No data</div>'}}
@@ -369,6 +374,7 @@ def render_home_page() -> str:
               <div class="metric"><strong>Readiness score</strong><br>${{payload.player_profile.readiness_score}}</div>
               <div class="metric"><strong>Risk level</strong><br>${{payload.player_profile.risk_level}}</div>
               <div class="metric"><strong>Role</strong><br>${{payload.player_profile.projected_role}}</div>
+              <div class="metric"><strong>Confidence</strong><br>${{payload.player_profile.prediction_confidence}} · ${{payload.player_profile.confidence_band}}</div>
               <div class="metric"><strong>Sport profile</strong><br>${{payload.player_profile.sport.name}} · ${{payload.player_profile.sport.league}}</div>
               <div class="metric"><strong>Data mode</strong><br>${{payload.player_profile.computation_data.source_mode}}</div>
             </div>
@@ -403,6 +409,8 @@ def render_home_page() -> str:
                     Injured: ${{player.injured_label}}<br>
                     Performance: ${{player.expected_performance}}<br>
                     Points: ${{player.expected_points}}<br>
+                    Range: ${{player.expected_points_range.low}} - ${{player.expected_points_range.high}}<br>
+                    Confidence: ${{player.confidence_band}}<br>
                     Outlook: ${{player.scoring_outlook}}<br>
                     Suggestion: ${{player.suggestions[0]}}<br>
                     <button
@@ -428,11 +436,15 @@ def render_home_page() -> str:
           <div class="metric"><strong>Team</strong><br>${{payload.team}}</div>
           <div class="metric"><strong>Opponent</strong><br>${{payload.opponent}}</div>
           <div class="metric"><strong>Win probability</strong><br>${{payload.team_prediction.win_probability}}</div>
+          <div class="metric"><strong>Win range</strong><br>${{payload.team_prediction.win_probability_range.low}} - ${{payload.team_prediction.win_probability_range.high}}</div>
           <div class="metric"><strong>Expected points</strong><br>${{payload.team_prediction.expected_points}}</div>
+          <div class="metric"><strong>Expected points range</strong><br>${{payload.team_prediction.expected_points_range.low}} - ${{payload.team_prediction.expected_points_range.high}}</div>
           <div class="metric"><strong>Implied probability</strong><br>${{payload.market_signals.implied_probability}}</div>
           <div class="metric"><strong>Edge</strong><br>${{payload.betting_edge.edge}}</div>
           <div class="metric"><strong>Action</strong><br>${{payload.betting_edge.recommended_action}}</div>
           <div class="metric"><strong>Stake</strong><br>${{payload.betting_edge.recommended_stake}}</div>
+          <div class="metric"><strong>Edge quality</strong><br>${{payload.betting_edge.edge_quality}}</div>
+          <div class="metric"><strong>Confidence</strong><br>${{payload.betting_edge.confidence}}</div>
         </div>
       `;
     }}

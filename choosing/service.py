@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .catalog import ODDS_API_ENDPOINTS, ODDS_API_SPORTS, resolve_player_sport
+from .catalog import ODDS_API_ENDPOINTS, ODDS_API_SPORTS, resolve_player_sport, resolve_sport_model
 from .data_sources import (
     FantasySportsAPIClient,
     MediaBroadcastClient,
@@ -44,6 +44,7 @@ class PredictionService:
         player_inputs.update({key: value for key, value in media_data.items() if key != "source_mode"})
         player_inputs.update({key: value for key, value in fantasy_data.items() if key != "source_mode"})
         player_inputs["sport"] = resolve_player_sport(overrides.get("sport"))
+        player_inputs["sport_profile"] = resolve_sport_model(player_inputs["sport"]["odds_api_key"])
         payload = build_player_prediction(sports_data["player_id"], player_inputs)
         payload["meta"] = self._meta(sports_data["player_id"], "player")
         payload["player_name"] = sports_data["player_name"]
@@ -65,6 +66,14 @@ class PredictionService:
                 "injury_risk": round(sports_data["injury_risk"], 3),
                 "injury_status": sports_data.get("injury_status", "Unknown"),
                 "availability": round(sports_data["availability"], 3),
+                "recent_form_l3": round(sports_data["recent_form_l3"], 3),
+                "recent_form_l5": round(sports_data["recent_form_l5"], 3),
+                "recent_form_l10": round(sports_data["recent_form_l10"], 3),
+                "rest_days": round(sports_data["rest_days"], 2),
+                "usage_trend": round(sports_data["usage_trend"], 3),
+                "source_confidence": round(sports_data["source_confidence"], 3),
+                "data_freshness": round(sports_data["data_freshness"], 3),
+                "projected_role": sports_data["projected_role"],
             },
             "media_broadcast": {
                 "mode": media_data.get("source_mode", "fallback"),
@@ -94,6 +103,7 @@ class PredictionService:
         game_inputs = dict(sports_data)
         game_inputs.update({key: value for key, value in media_data.items() if key != "source_mode"})
         game_inputs.update({key: value for key, value in fantasy_data.items() if key != "source_mode"})
+        game_inputs["sport_profile"] = resolve_sport_model(self.odds_client.sport)
         payload = build_game_edge(sports_data["game_id"], game_inputs, odds_data)
         payload["meta"] = self._meta(sports_data["game_id"], "game")
         payload["team"] = sports_data["team"]
@@ -102,6 +112,11 @@ class PredictionService:
             payload["team_prediction"]["expected_points"] + sports_data["expected_points_adjustment"],
             1,
         )
+        for bound in ("low", "mid", "high"):
+            payload["team_prediction"]["expected_points_range"][bound] = round(
+                payload["team_prediction"]["expected_points_range"][bound] + sports_data["expected_points_adjustment"],
+                1,
+            )
         payload["team_prediction"]["source_mode"] = sports_data.get("source_mode", "fallback")
         payload["market_signals"]["sharp_money_index"] = round(odds_data["sharp_money_index"], 3)
         payload["market_signals"]["steam_move"] = odds_data["steam_move"]
@@ -132,19 +147,12 @@ class PredictionService:
                 "opening_odds": odds_data["opening_odds"],
                 "current_odds": odds_data["current_odds"],
                 "market_consensus": round(odds_data["market_consensus"], 3),
+                "book_disagreement": round(odds_data["book_disagreement"], 3),
+                "consensus_spread": round(odds_data["consensus_spread"], 3),
+                "historical_closing_line_value": round(odds_data["historical_closing_line_value"], 3),
+                "market_source_confidence": round(odds_data["market_source_confidence"], 3),
             },
         }
-        payload["betting_edge"]["confidence"] = round(
-            clamp(
-                0.45
-                + abs(payload["betting_edge"]["edge"]) * 2.5
-                + odds_data["sharp_money_index"] * 0.1,
-                0,
-                1,
-            ),
-            3,
-        )
-        payload["betting_edge"]["recommended_stake"] = _recommended_stake(payload["betting_edge"]["edge"])
         return payload
 
     def search_players(self, query: str = "", team: str | None = None, sport: str | None = None) -> list[dict]:
@@ -184,6 +192,9 @@ class PredictionService:
                     "injured_label": prediction["predictions"]["injured_label"],
                     "scoring_outlook": prediction["predictions"]["scoring_outlook"],
                     "suggestions": prediction["predictions"]["suggestions"],
+                    "prediction_confidence": prediction["predictions"]["prediction_confidence"],
+                    "confidence_band": prediction["predictions"]["confidence_band"],
+                    "expected_points_range": prediction["predictions"]["expected_points_range"],
                     "availability_probability": prediction["predictions"]["availability_probability"],
                     "underperformance_risk": prediction["predictions"]["underperformance_risk"],
                     "player_profile": prediction["player_profile"],
@@ -212,22 +223,12 @@ class PredictionService:
         }
 
 
-def _recommended_stake(edge: float) -> str:
-    absolute_edge = abs(edge)
-    if absolute_edge < 0.03:
-        return "no_play"
-    if absolute_edge < 0.07:
-        return "small"
-    if absolute_edge < 0.12:
-        return "medium"
-    return "strong"
-
-
 def _build_player_profile(prediction: dict, sports_data: dict) -> dict:
     expected_points = prediction["predictions"]["expected_points"]
     expected_minutes = prediction["predictions"]["expected_minutes"]
     availability_probability = prediction["predictions"]["availability_probability"]
     underperformance_risk = prediction["predictions"]["underperformance_risk"]
+    prediction_confidence = prediction["predictions"]["prediction_confidence"]
     readiness_score = clamp(
         availability_probability * 0.4
         + prediction["player_signals"]["recent_form"] * 0.25
@@ -256,18 +257,36 @@ def _build_player_profile(prediction: dict, sports_data: dict) -> dict:
         "scoring_index": round(scoring_index, 3),
         "scoring_band": scoring_band,
         "risk_level": risk_level,
-        "projected_role": "Featured scorer" if expected_minutes >= 32 or expected_points >= 24 else "Rotation scorer",
+        "projected_role": sports_data.get("projected_role")
+        or ("Featured scorer" if expected_minutes >= 32 or expected_points >= 24 else "Rotation scorer"),
         "sport": dict(sports_data.get("sport", resolve_player_sport())),
         "injury_status": sports_data.get("injury_status", "Unknown"),
         "injured": prediction["predictions"]["injured"],
         "injured_label": prediction["predictions"]["injured_label"],
+        "prediction_confidence": round(prediction_confidence, 3),
+        "confidence_band": prediction["predictions"]["confidence_band"],
+        "availability_tier": prediction["predictions"]["availability_tier"],
+        "feature_tracking": prediction["predictions"]["feature_tracking"],
         "odds_api_coverage": _odds_api_catalog(),
         "computation_data": {
             "recent_form": prediction["player_signals"]["recent_form"],
+            "recent_form_l3": prediction["player_signals"]["recent_form_l3"],
+            "recent_form_l5": prediction["player_signals"]["recent_form_l5"],
+            "recent_form_l10": prediction["player_signals"]["recent_form_l10"],
+            "effective_form": prediction["player_signals"]["effective_form"],
             "consistency": prediction["player_signals"]["consistency"],
             "team_context": prediction["player_signals"]["team_context"],
             "workload_fatigue": prediction["player_signals"]["workload_fatigue"],
             "matchup_difficulty": prediction["player_signals"]["matchup_difficulty"],
+            "rest_days": prediction["player_signals"]["rest_days"],
+            "usage_trend": prediction["player_signals"]["usage_trend"],
+            "home_split": prediction["player_signals"]["home_split"],
+            "away_split": prediction["player_signals"]["away_split"],
+            "opponent_split": prediction["player_signals"]["opponent_split"],
+            "source_confidence": prediction["player_signals"]["source_confidence"],
+            "data_freshness": prediction["player_signals"]["data_freshness"],
+            "teammate_absences": prediction["player_signals"]["teammate_absences"],
+            "lineup_support": prediction["player_signals"]["lineup_support"],
             "injury_risk": prediction["player_signals"]["injury_risk"],
             "broadcast_exposure": prediction["media_broadcast_signals"]["broadcast_exposure"],
             "narrative_pressure": prediction["media_broadcast_signals"]["narrative_pressure"],
@@ -276,9 +295,18 @@ def _build_player_profile(prediction: dict, sports_data: dict) -> dict:
             "injury_status": sports_data.get("injury_status", "Unknown"),
             "injured": prediction["predictions"]["injured"],
             "injured_label": prediction["predictions"]["injured_label"],
+            "injury_days_out": sports_data.get("injury_days_out", 0.0),
             "availability_probability": availability_probability,
+            "availability_tier": prediction["predictions"]["availability_tier"],
             "expected_minutes": expected_minutes,
+            "expected_minutes_range": prediction["predictions"]["expected_minutes_range"],
             "expected_points": expected_points,
+            "expected_points_range": prediction["predictions"]["expected_points_range"],
+            "expected_performance_range": prediction["predictions"]["expected_performance_range"],
+            "prediction_confidence": prediction_confidence,
+            "confidence_band": prediction["predictions"]["confidence_band"],
+            "feature_tracking": prediction["predictions"]["feature_tracking"],
+            "calibration": prediction["predictions"]["calibration"],
             "source_mode": sports_data.get("source_mode", "fallback"),
             "odds_api_endpoints": _odds_api_catalog()["endpoints"],
             "odds_api_sports": _odds_api_catalog()["sports"],

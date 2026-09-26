@@ -43,7 +43,7 @@ The repository still includes the underlying HTTP prediction utilities:
 
 - `GET /player/{id}/prediction` supports player ids or player names, plus optional `team=...`, and includes predicted points
   and a computed `player_profile`
-  with team, sport, injury status, explicit injured yes/no fields, sport-aware betting suggestions, computation/source details, and embedded The Odds API endpoint and sport coverage data
+  with team, sport, injury status, explicit injured yes/no fields, sport-aware betting suggestions, sport-specific model weighting, historical form windows, confidence/range outputs, computation/source details, and embedded The Odds API endpoint and sport coverage data
   (`sport=...` can be any supported Odds API sport key such as `basketball_nba` or `americanfootball_nfl`)
 - `GET /players/top?sport={sport_key}&limit=10` summarizes the top predicted players for a selected sport and includes each player's leading suggestion
 - `GET /game/{id}/edge` supports game ids or team names
@@ -78,6 +78,15 @@ The displayed The Odds API sport coverage includes:
 - Olympics
 
 The dashboard also includes a "Top players by sport" section that ranks up to 10 players by predicted performance for the selected sport, surfaces a leading suggestion for each player, and lets you click a player to load the full player prediction view.
+
+Recent computation upgrades now include:
+
+- sport-specific player and game model weighting
+- rolling player form windows (`recent_form_l3`, `recent_form_l5`, `recent_form_l10`)
+- rest, usage trend, lineup support, and teammate-absence context
+- confidence bands and low/mid/high ranges for player and team projections
+- market quality inputs such as book disagreement, consensus spread, and market stability
+- feature-tracking and heuristic calibration metadata to explain what is helping or hurting a projection
 
 ## Live API configuration
 

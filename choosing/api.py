@@ -25,6 +25,19 @@ PLAYER_FLOAT_FIELDS = {
     "fantasy_projection",
     "fantasy_value_rating",
     "ownership_projection",
+    "recent_form_l3",
+    "recent_form_l5",
+    "recent_form_l10",
+    "home_split",
+    "away_split",
+    "opponent_split",
+    "rest_days",
+    "usage_trend",
+    "source_confidence",
+    "data_freshness",
+    "teammate_absences",
+    "lineup_support",
+    "injury_days_out",
 }
 
 GAME_FLOAT_FIELDS = {
@@ -42,6 +55,10 @@ GAME_FLOAT_FIELDS = {
     "fantasy_market_support",
     "fantasy_points_total",
     "injury_leverage",
+    "book_disagreement",
+    "consensus_spread",
+    "historical_closing_line_value",
+    "market_source_confidence",
 }
 
 GAME_INT_FIELDS = {"opening_odds", "current_odds", "odds"}
@@ -186,15 +203,24 @@ def app(environ, start_response):
             overrides["sport"] = query["sport"][0].strip()
         for bounded_field in {
             "recent_form",
+            "recent_form_l3",
+            "recent_form_l5",
+            "recent_form_l10",
             "workload",
             "injury_risk",
             "consistency",
             "matchup_difficulty",
             "team_context",
             "availability",
+            "home_split",
+            "away_split",
+            "opponent_split",
             "fouls_cards",
             "team_instability",
             "media_sentiment",
+            "source_confidence",
+            "data_freshness",
+            "lineup_support",
         }:
             if bounded_field in overrides and not 0 <= overrides[bounded_field] <= 1:
                 return json_response(
@@ -207,6 +233,30 @@ def app(environ, start_response):
                 start_response,
                 "400 Bad Request",
                 {"error": "effort_change must be between -1 and 1"},
+            )
+        if "usage_trend" in overrides and not -1 <= overrides["usage_trend"] <= 1:
+            return json_response(
+                start_response,
+                "400 Bad Request",
+                {"error": "usage_trend must be between -1 and 1"},
+            )
+        if "rest_days" in overrides and not 0 <= overrides["rest_days"] <= 7:
+            return json_response(
+                start_response,
+                "400 Bad Request",
+                {"error": "rest_days must be between 0 and 7"},
+            )
+        if "teammate_absences" in overrides and not 0 <= overrides["teammate_absences"] <= 10:
+            return json_response(
+                start_response,
+                "400 Bad Request",
+                {"error": "teammate_absences must be between 0 and 10"},
+            )
+        if "injury_days_out" in overrides and overrides["injury_days_out"] < 0:
+            return json_response(
+                start_response,
+                "400 Bad Request",
+                {"error": "injury_days_out must be zero or greater"},
             )
         return json_response(start_response, "200 OK", service.get_player_prediction(player_id, overrides))
 
@@ -230,7 +280,15 @@ def app(environ, start_response):
                 "400 Bad Request",
                 {"error": "model_probability must be between 0 and 1"},
             )
-        for bounded_field in {"team_form", "pace", "efficiency", "injury_impact", "market_consensus"}:
+        for bounded_field in {
+            "team_form",
+            "pace",
+            "efficiency",
+            "injury_impact",
+            "market_consensus",
+            "book_disagreement",
+            "market_source_confidence",
+        }:
             if bounded_field in sports_overrides and not 0 <= sports_overrides[bounded_field] <= 1:
                 return json_response(
                     start_response,
@@ -238,8 +296,36 @@ def app(environ, start_response):
                     {"error": f"{bounded_field} must be between 0 and 1"},
                 )
         odds_overrides = dict(bool_overrides)
-        odds_overrides.update({key: value for key, value in sports_overrides.items() if key in {"market_consensus", "line_movement", "closing_line_value"}})
-        sports_overrides = {key: value for key, value in sports_overrides.items() if key not in {"market_consensus", "line_movement", "closing_line_value"}}
+        odds_overrides.update(
+            {
+                key: value
+                for key, value in sports_overrides.items()
+                if key
+                in {
+                    "market_consensus",
+                    "line_movement",
+                    "closing_line_value",
+                    "book_disagreement",
+                    "consensus_spread",
+                    "historical_closing_line_value",
+                    "market_source_confidence",
+                }
+            }
+        )
+        sports_overrides = {
+            key: value
+            for key, value in sports_overrides.items()
+            if key
+            not in {
+                "market_consensus",
+                "line_movement",
+                "closing_line_value",
+                "book_disagreement",
+                "consensus_spread",
+                "historical_closing_line_value",
+                "market_source_confidence",
+            }
+        }
 
         if "odds" in int_overrides:
             odds_overrides["current_odds"] = int_overrides["odds"]
