@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import html
 
 from .catalog import ODDS_API_ENDPOINTS, ODDS_API_SPORTS
 from .data_sources import search_players, search_teams
@@ -43,40 +43,38 @@ def app_metadata() -> dict:
     }
 
 
-def _odds_endpoint_example(path: str, sport: str = "basketball_nba") -> str:
-    if "{eventId}" in path:
-        return f"/sports/{sport}/events"
-    return path.replace("{sport}", sport)
-
-
 def render_home_page() -> str:
     metadata = app_metadata()
-    metadata_json = json.dumps(metadata, indent=2)
-    odds_endpoint_markup = "\n".join(
+    players = search_players()
+    teams = search_teams()
+    sports = metadata["upstream_sports"]["the_odds_api"]
+    players_per_sport = {}
+    for player in players:
+        players_per_sport[player["sport_key"]] = players_per_sport.get(player["sport_key"], 0) + 1
+    coverage_summary_markup = "\n".join(
         (
-            f'<div class="metric"><strong>{entry["name"]}</strong><br>'
-            f'<span class="muted">{entry["path"]}</span><br>'
-            f'<a href="{_odds_endpoint_example(entry["path"])}" target="_blank" rel="noopener">'
-            f'{"Find event IDs" if "{eventId}" in entry["path"] else "View data"}</a></div>'
+            f'<div class="metric"><strong>Sports covered</strong><br>{len(sports)}</div>',
+            f'<div class="metric"><strong>Players tracked</strong><br>{len(players)}</div>',
+            f'<div class="metric"><strong>Teams tracked</strong><br>{len(teams)}</div>',
+            f'<div class="metric"><strong>Data sources</strong><br>{len(metadata["data_sources"])}</div>',
         )
-        for entry in metadata["upstream_endpoints"]["the_odds_api"]
     )
-    odds_sport_markup = "\n".join(
+    coverage_sport_markup = "\n".join(
         (
-            f'<div class="metric"><strong>{entry["name"]}</strong><br>'
-            f'<span class="muted">{entry["key"]}</span></div>'
+            f'<div class="metric"><strong>{html.escape(entry["name"])}</strong><br>'
+            f'<span class="muted">{players_per_sport.get(entry["key"], 0)} players tracked</span></div>'
         )
-        for entry in metadata["upstream_sports"]["the_odds_api"]
+        for entry in sports
     )
     player_sport_options = "\n".join(
         f'<option value="{sport["key"]}">{sport["name"]}</option>'
         for sport in metadata["upstream_sports"]["the_odds_api"]
     )
     player_options = "\n".join(
-        f'<option value="{player["name"]}">{player["team"]}</option>' for player in search_players()
+        f'<option value="{player["name"]}">{player["team"]}</option>' for player in players
     )
     team_options = "\n".join(
-        f'<option value="{team["team"]}">{team["opponent"]}</option>' for team in search_teams()
+        f'<option value="{team["team"]}">{team["opponent"]}</option>' for team in teams
     )
     extra_script = EXTRA_SCRIPT
     return f"""<!doctype html>
@@ -474,8 +472,14 @@ def render_home_page() -> str:
 
     <section class="cards">
       <article class="card">
-        <h3>Available API</h3>
-        <pre>{metadata_json}</pre>
+        <h3>Coverage</h3>
+        <p class="muted">What Choosing tracks and models today.</p>
+        <div class="metric-grid">
+          {coverage_summary_markup}
+        </div>
+        <div class="metric-grid">
+          {coverage_sport_markup}
+        </div>
       </article>
       <article class="card">
         <h3>Workflow</h3>
@@ -484,18 +488,6 @@ def render_home_page() -> str:
           <div class="metric"><strong>2.</strong><br>Read bookmaker movement and implied probability</div>
           <div class="metric"><strong>3.</strong><br>Estimate outcomes and risk</div>
           <div class="metric"><strong>4.</strong><br>Act only when the edge is positive</div>
-        </div>
-      </article>
-      <article class="card">
-        <h3>The Odds API endpoints</h3>
-        <div class="metric-grid">
-          {odds_endpoint_markup}
-        </div>
-      </article>
-      <article class="card">
-        <h3>The Odds API sports</h3>
-        <div class="metric-grid">
-          {odds_sport_markup}
         </div>
       </article>
       <article class="card">
@@ -508,15 +500,7 @@ def render_home_page() -> str:
   <script>
     const byId = (id) => document.getElementById(id);
 
-    function listMarkup(items, keyField) {{
-      return items.map((item) => `
-        <div class="metric"><strong>${{item.name}}</strong><br>${{item[keyField]}}</div>
-      `).join("");
-    }}
-
     function playerMarkup(payload) {{
-      const predictionEndpoints = payload.predictions.odds_api_endpoints || [];
-      const profileSports = payload.player_profile.odds_api_coverage?.sports || [];
       const suggestions = payload.predictions.suggestions || [];
       return `
         <div class="profile-stack">
@@ -541,9 +525,6 @@ def render_home_page() -> str:
               <div class="metric"><strong>Prediction confidence</strong><br>${{payload.predictions.prediction_confidence}} · ${{payload.predictions.confidence_band}}</div>
             </div>
             <div class="metric-grid">
-              ${{predictionEndpoints.length ? listMarkup(predictionEndpoints, 'path') : '<div class="metric"><strong>Odds API endpoints</strong><br>No data</div>'}}
-            </div>
-            <div class="metric-grid">
               ${{suggestions.length ? suggestions.map((item) => `<div class="metric"><strong>Suggestion</strong><br>${{item}}</div>`).join("") : ""}}
             </div>
           </div>
@@ -559,9 +540,6 @@ def render_home_page() -> str:
               <div class="metric"><strong>Confidence</strong><br>${{payload.player_profile.prediction_confidence}} · ${{payload.player_profile.confidence_band}}</div>
               <div class="metric"><strong>Sport profile</strong><br>${{payload.player_profile.sport.name}} · ${{payload.player_profile.sport.league}}</div>
               <div class="metric"><strong>Data mode</strong><br>${{payload.player_profile.computation_data.source_mode}}</div>
-            </div>
-            <div class="metric-grid">
-              ${{profileSports.length ? listMarkup(profileSports, 'key') : '<div class="metric"><strong>Odds API sports</strong><br>No data</div>'}}
             </div>
           </div>
           ${{propMarkup(payload.prop_market)}}
