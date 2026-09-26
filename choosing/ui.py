@@ -346,6 +346,7 @@ def render_home_page() -> str:
               <div class="metric"><strong>Sport</strong><br>${{payload.sport.name}} · ${{payload.sport.league}}</div>
               <div class="metric"><strong>Minutes</strong><br>${{payload.predictions.expected_minutes}}</div>
               <div class="metric"><strong>Points</strong><br>${{payload.predictions.expected_points}}</div>
+              <div class="metric"><strong>Injured</strong><br>${{payload.predictions.injured_label}}</div>
               <div class="metric"><strong>Scoring outlook</strong><br>${{payload.predictions.scoring_outlook}}</div>
               <div class="metric"><strong>Performance</strong><br>${{payload.predictions.expected_performance}}</div>
               <div class="metric"><strong>Availability</strong><br>${{payload.predictions.availability_probability}}</div>
@@ -359,6 +360,7 @@ def render_home_page() -> str:
             <h3>Player profile</h3>
             <div class="metric-grid">
               <div class="metric"><strong>Injury status</strong><br>${{payload.player_profile.injury_status}}</div>
+              <div class="metric"><strong>Injured</strong><br>${{payload.player_profile.injured_label}}</div>
               <div class="metric"><strong>Scoring band</strong><br>${{payload.player_profile.scoring_band}}</div>
               <div class="metric"><strong>Readiness score</strong><br>${{payload.player_profile.readiness_score}}</div>
               <div class="metric"><strong>Risk level</strong><br>${{payload.player_profile.risk_level}}</div>
@@ -394,6 +396,7 @@ def render_home_page() -> str:
                   <div class="metric">
                     <strong>${{player.player_name}}</strong><br>
                     ${{player.team}} · ${{player.sport.league}}<br>
+                    Injured: ${{player.injured_label}}<br>
                     Performance: ${{player.expected_performance}}<br>
                     Points: ${{player.expected_points}}<br>
                     Outlook: ${{player.scoring_outlook}}<br>

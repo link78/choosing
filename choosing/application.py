@@ -78,6 +78,8 @@ class BettingApplication:
             "expected_minutes": prediction["predictions"]["expected_minutes"],
             "expected_points": prediction["predictions"]["expected_points"],
             "expected_performance": prediction["predictions"]["expected_performance"],
+            "injured": prediction["predictions"]["injured"],
+            "injured_label": prediction["predictions"]["injured_label"],
             "availability_probability": prediction["predictions"]["availability_probability"],
             "underperformance_risk": prediction["predictions"]["underperformance_risk"],
             "likely_to_score": prediction["predictions"]["likely_to_score"],
@@ -121,7 +123,7 @@ def render_text_report(report: dict) -> str:
         lines.append(
             f"- Player {player['player_name']} ({player['player_id']}, {player['team']}, "
             f"{player['sport']['league']} {player['sport']['name']}): minutes {player['expected_minutes']}, "
-            f"points {player['expected_points']}, {player['scoring_outlook'].lower()}, "
+            f"points {player['expected_points']}, injured {player['injured_label'].lower()}, {player['scoring_outlook'].lower()}, "
             f"performance {player['expected_performance']}, flags {flags}"
         )
 

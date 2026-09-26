@@ -43,7 +43,7 @@ The repository still includes the underlying HTTP prediction utilities:
 
 - `GET /player/{id}/prediction` supports player ids or player names, plus optional `team=...`, and includes predicted points
   and a computed `player_profile`
-  with team, sport, injury status, computation/source details, and embedded The Odds API endpoint and sport coverage data
+  with team, sport, injury status, explicit injured yes/no fields, computation/source details, and embedded The Odds API endpoint and sport coverage data
   (`sport=...` can be any supported Odds API sport key such as `basketball_nba` or `americanfootball_nfl`)
 - `GET /players/top?sport={sport_key}&limit=10` summarizes the top predicted players for a selected sport
 - `GET /game/{id}/edge` supports game ids or team names
