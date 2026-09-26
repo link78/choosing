@@ -12,6 +12,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from .catalog import ODDS_API_SPORTS
 from .prediction import clamp, stable_float
 
 SPORTSDATAIO_SPORT_PATHS = {
@@ -79,6 +80,114 @@ TEAM_DIRECTORY = [
         "aliases": ["golden state", "warriors"],
     },
 ]
+
+
+ODDS_API_ENDPOINT_PARAMS = {
+    "sports": {"all"},
+    "odds": {"regions", "markets", "oddsFormat", "dateFormat", "eventIds", "bookmakers", "commenceTimeFrom", "commenceTimeTo"},
+    "events": {"dateFormat", "eventIds", "commenceTimeFrom", "commenceTimeTo"},
+    "event_odds": {"regions", "markets", "oddsFormat", "dateFormat", "bookmakers"},
+    "scores": {"daysFrom", "dateFormat", "eventIds"},
+    "historical_odds": {"date", "regions", "markets", "oddsFormat", "dateFormat", "eventIds", "bookmakers", "commenceTimeFrom", "commenceTimeTo"},
+}
+
+FALLBACK_BOOKMAKERS = [("draftkings", "DraftKings"), ("fanduel", "FanDuel"), ("betmgm", "BetMGM")]
+
+
+def _odds_sport_title(sport: str) -> str:
+    for entry in ODDS_API_SPORTS:
+        if entry["key"] == sport:
+            return entry["name"]
+    return sport
+
+
+def _fallback_participants(sport: str) -> list[str]:
+    field = "name" if sport.startswith("tennis") else "team"
+    participants = []
+    for player in PLAYER_DIRECTORY:
+        if player["sport_key"] == sport and player[field] not in participants:
+            participants.append(player[field])
+    if sport == "basketball_nba":
+        for team in TEAM_DIRECTORY:
+            for name in (team["team"], team["opponent"]):
+                if name not in participants:
+                    participants.append(name)
+    return participants
+
+
+def _fallback_events(sport: str, reference: datetime) -> list[dict]:
+    participants = _fallback_participants(sport)
+    start = reference.replace(minute=0, second=0, microsecond=0)
+    events = []
+    for index in range(0, len(participants) - 1, 2):
+        home, away = participants[index], participants[index + 1]
+        events.append(
+            {
+                "id": _slugify(f"{sport}-{away}-at-{home}"),
+                "sport_key": sport,
+                "sport_title": _odds_sport_title(sport),
+                "commence_time": (start + timedelta(hours=3 * (index // 2 + 1))).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "home_team": home,
+                "away_team": away,
+            }
+        )
+    return events
+
+
+def _probability_to_american(probability: float) -> int:
+    probability = clamp(probability, 0.02, 0.98)
+    if probability >= 0.5:
+        return -int(round(probability / (1 - probability) * 100))
+    return int(round((1 - probability) / probability * 100))
+
+
+def _fallback_event_odds(event: dict, reference: datetime) -> dict:
+    last_update = reference.strftime("%Y-%m-%dT%H:%M:%SZ")
+    home_probability = stable_float(f"{event['id']}:home", 0.35, 0.65)
+    bookmakers = []
+    for key, title in FALLBACK_BOOKMAKERS:
+        shift = stable_float(f"{event['id']}:{key}", -0.02, 0.02)
+        vig = 0.024
+        bookmakers.append(
+            {
+                "key": key,
+                "title": title,
+                "last_update": last_update,
+                "markets": [
+                    {
+                        "key": "h2h",
+                        "last_update": last_update,
+                        "outcomes": [
+                            {"name": event["home_team"], "price": _probability_to_american(home_probability + shift + vig)},
+                            {"name": event["away_team"], "price": _probability_to_american(1 - home_probability - shift + vig)},
+                        ],
+                    }
+                ],
+            }
+        )
+    return {**event, "bookmakers": bookmakers}
+
+
+def _fallback_scores(sport: str) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    results = []
+    for event in _fallback_events(sport, now - timedelta(days=1)):
+        home_score = int(stable_float(f"{event['id']}:home_score", 80, 125)) if sport.startswith("basketball") else int(stable_float(f"{event['id']}:home_score", 0, 35))
+        away_score = int(stable_float(f"{event['id']}:away_score", 80, 125)) if sport.startswith("basketball") else int(stable_float(f"{event['id']}:away_score", 0, 35))
+        commence = _parse_iso_datetime(event["commence_time"])
+        completed = bool(commence and commence < now - timedelta(hours=3))
+        results.append(
+            {
+                **event,
+                "completed": completed,
+                "scores": [
+                    {"name": event["home_team"], "score": str(home_score)},
+                    {"name": event["away_team"], "score": str(away_score)},
+                ] if completed else None,
+                "last_update": now.strftime("%Y-%m-%dT%H:%M:%SZ") if completed else None,
+            }
+        )
+    return results
 
 
 def _normalize(value: str) -> str:
@@ -1073,6 +1182,100 @@ class OddsAPIClient:
                 "commence_time": event["commence_time"],
                 "source_mode": "live",
             }
+        return None
+
+    def fetch_endpoint(
+        self,
+        endpoint: str,
+        sport: str | None = None,
+        event_id: str | None = None,
+        params: dict | None = None,
+    ) -> dict:
+        """Serve one of the catalogued Odds API endpoints, live when configured, otherwise from local fallback data."""
+        if endpoint not in ODDS_API_ENDPOINT_PARAMS:
+            raise ValueError(f"unsupported endpoint: {endpoint}")
+        sport_key = sport or self.sport
+        allowed = ODDS_API_ENDPOINT_PARAMS[endpoint]
+        query = {key: value for key, value in (params or {}).items() if key in allowed and value not in (None, "")}
+        if endpoint in {"odds", "event_odds", "historical_odds"}:
+            query.setdefault("regions", os.environ.get("ODDS_API_REGIONS", "us"))
+            query.setdefault("markets", os.environ.get("ODDS_API_MARKETS", "h2h"))
+            query.setdefault("oddsFormat", os.environ.get("ODDS_API_ODDS_FORMAT", "american"))
+        if endpoint == "historical_odds" and not query.get("date"):
+            query["date"] = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        paths = {
+            "sports": "sports",
+            "odds": f"sports/{sport_key}/odds",
+            "events": f"sports/{sport_key}/events",
+            "event_odds": f"sports/{sport_key}/events/{event_id}/odds",
+            "scores": f"sports/{sport_key}/scores",
+            "historical_odds": f"historical/sports/{sport_key}/odds",
+        }
+        path = paths[endpoint]
+        payload = self._request_raw(path, query)
+        source_mode = "live" if payload is not None else "fallback"
+        if payload is None:
+            payload = self._fallback_endpoint(endpoint, sport_key, event_id, query)
+        return {
+            "provider": self.source_name,
+            "endpoint": endpoint,
+            "path": f"/{path}",
+            "sport": None if endpoint == "sports" else sport_key,
+            "source_mode": source_mode,
+            "params": {key: value for key, value in query.items() if key != "apiKey"},
+            "data": payload,
+        }
+
+    def _request_raw(self, path: str, params: dict):
+        if not self.api_key:
+            self._last_call_succeeded = None
+            self._last_error_message = "API key not configured"
+            return None
+        query = {"apiKey": self.api_key, **params}
+        url = f"{self.base_url}/{path}?{urlencode(query)}"
+        try:
+            payload = _cached_fetch(self, url, {"Accept": "application/json"})
+            self._last_call_succeeded = True
+            self._last_error_message = None
+            return payload
+        except (HTTPError, URLError, TimeoutError, ValueError, OSError) as exc:
+            self._last_call_succeeded = False
+            self._last_error_message = str(exc)
+            return None
+
+    def _fallback_endpoint(self, endpoint: str, sport: str, event_id: str | None, params: dict):
+        if endpoint == "sports":
+            return [
+                {
+                    "key": entry["key"],
+                    "group": entry["name"],
+                    "title": entry["name"],
+                    "description": f"{entry['name']} (local fallback data)",
+                    "active": True,
+                    "has_outrights": False,
+                }
+                for entry in ODDS_API_SPORTS
+            ]
+        if endpoint == "scores":
+            return _fallback_scores(sport)
+        now = datetime.now(timezone.utc)
+        if endpoint == "historical_odds":
+            snapshot = _parse_iso_datetime(params.get("date")) or now
+            events = _fallback_events(sport, snapshot)
+            return {
+                "timestamp": snapshot.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "previous_timestamp": (snapshot - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "next_timestamp": (snapshot + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "data": [_fallback_event_odds(event, snapshot) for event in events],
+            }
+        events = _fallback_events(sport, now)
+        if endpoint == "events":
+            return events
+        if endpoint == "odds":
+            return [_fallback_event_odds(event, now) for event in events]
+        for event in events:
+            if event["id"] == event_id:
+                return _fallback_event_odds(event, now)
         return None
 
     def _fetch_live_market(self, game: dict, sport: str | None = None) -> dict | None:

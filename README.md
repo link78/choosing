@@ -71,6 +71,12 @@ The home dashboard and `/app.json` also display the tracked The Odds API endpoin
 - `/sports/{sport}/scores`
 - `/historical/sports/{sport}/odds`
 
+Each of these paths is also served by this app (e.g. `GET /sports/basketball_nba/odds`). With `ODDS_API_KEY` set the
+request is proxied to The Odds API (supported query params such as `regions`, `markets`, `oddsFormat`, `bookmakers`,
+`eventIds`, `daysFrom`, and `date` are forwarded); otherwise, or if the upstream call fails, deterministic local
+fallback data is returned. Responses wrap the upstream payload as `{"provider", "endpoint", "path", "sport",
+"source_mode", "params", "data"}`. Historical odds default `date` to 24 hours ago when omitted.
+
 The displayed The Odds API sport coverage includes:
 
 - NFL
