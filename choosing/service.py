@@ -183,7 +183,9 @@ class PredictionService:
 
     def get_top_players_summary(self, sport: str | None = None, limit: int = 10) -> dict:
         selected_sport = resolve_player_sport(sport)
-        players = self.search_players(sport=selected_sport["odds_api_key"])
+        players = self.sports_client.fetch_top_players(selected_sport["odds_api_key"], limit)
+        if not players:
+            players = self.search_players(sport=selected_sport["odds_api_key"])
         if len(players) < limit:
             players.extend(_synthetic_players_for_sport(selected_sport, limit - len(players)))
         summaries = []

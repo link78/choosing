@@ -10,6 +10,14 @@ from urllib.request import Request, urlopen
 
 from .prediction import clamp, stable_float
 
+SPORTSDATAIO_SPORT_PATHS = {
+    "basketball_nba": "nba",
+    "americanfootball_nfl": "nfl",
+    "baseball_mlb": "mlb",
+    "basketball_ncaab": "cbb",
+    "tennis_*": "tennis",
+}
+
 
 PLAYER_DIRECTORY = [
     {"id": "42", "name": "Luka Doncic", "team": "Dallas Mavericks", "sport_key": "basketball_nba", "aliases": ["luka", "doncic"]},
@@ -201,6 +209,22 @@ def _finalize_market_payload(payload: dict) -> dict:
     return payload
 
 
+def _season_value_score(stats: dict) -> float:
+    fantasy_points = _safe_float(stats.get("FantasyPoints"))
+    if fantasy_points is not None:
+        return fantasy_points
+    points = _safe_float(stats.get("Points"), 0.0) or 0.0
+    passing_yards = _safe_float(stats.get("PassingYards"), 0.0) or 0.0
+    rushing_yards = _safe_float(stats.get("RushingYards"), 0.0) or 0.0
+    receiving_yards = _safe_float(stats.get("ReceivingYards"), 0.0) or 0.0
+    touchdowns = (
+        (_safe_float(stats.get("PassingTouchdowns"), 0.0) or 0.0) * 4
+        + ((_safe_float(stats.get("RushingTouchdowns"), 0.0) or 0.0) * 6)
+        + ((_safe_float(stats.get("ReceivingTouchdowns"), 0.0) or 0.0) * 6)
+    )
+    return points + passing_yards * 0.04 + rushing_yards * 0.1 + receiving_yards * 0.1 + touchdowns
+
+
 def _http_get_json(url: str, headers: dict[str, str] | None = None, timeout: float = 5.0):
     request = Request(url, headers=headers or {})
     with urlopen(request, timeout=timeout) as response:
@@ -299,9 +323,22 @@ class SportsDataIOClient:
             "last_error_message": self._last_error_message if configured else "API key not configured",
         }
 
+    def base_url_for_sport(self, sport: str | None = None) -> str:
+        if not sport:
+            return self.base_url
+        mapped = SPORTSDATAIO_SPORT_PATHS.get(sport)
+        if not mapped:
+            return self.base_url
+        for candidate in SPORTSDATAIO_SPORT_PATHS.values():
+            suffix = f"/{candidate}"
+            if self.base_url.endswith(suffix):
+                return f"{self.base_url[:-len(suffix)]}/{mapped}"
+        return f"{self.base_url.rstrip('/')}/{mapped}"
+
     def fetch_player_context(self, player_id: str, overrides: dict | None = None) -> dict:
         overrides = overrides or {}
-        player = self.resolve_player(player_id, overrides.get("team"), overrides.get("sport"))
+        sport = overrides.get("sport")
+        player = self.resolve_player(player_id, overrides.get("team"), sport)
         injury_risk = overrides.get("injury_risk", stable_float(f"{player['id']}:injury", 0.05, 0.55))
         recent_form = overrides.get("recent_form", stable_float(f"{player['id']}:form", 0.4, 0.95))
         payload = {
@@ -339,7 +376,7 @@ class SportsDataIOClient:
             "projected_role": overrides.get("projected_role"),
         }
         payload.update(_build_recent_form_windows(player["id"], recent_form))
-        live_payload = self._fetch_live_player_context(player)
+        live_payload = self._fetch_live_player_context(player, sport or player.get("sport_key"))
         if live_payload:
             payload.update({key: value for key, value in live_payload.items() if value is not None})
             payload["source_mode"] = "live"
@@ -375,7 +412,7 @@ class SportsDataIOClient:
 
     def resolve_player(self, player_reference: str, team: str | None = None, sport: str | None = None) -> dict:
         if self.api_key:
-            live_match = self._resolve_live_player(player_reference, team)
+            live_match = self._resolve_live_player(player_reference, team, sport)
             if live_match:
                 return live_match
         return _resolve_local_player(player_reference, team, sport)
@@ -387,14 +424,14 @@ class SportsDataIOClient:
                 return live_match
         return _resolve_local_team(team_reference)
 
-    def _request(self, path: str, params: dict | None = None):
+    def _request(self, path: str, params: dict | None = None, sport: str | None = None):
         if not self.api_key:
             self._last_call_succeeded = None
             self._last_error_message = "API key not configured"
             return None
         query = dict(params or {})
         query["key"] = self.api_key
-        url = f"{self.base_url}/{path.lstrip('/')}"
+        url = f"{self.base_url_for_sport(sport)}/{path.lstrip('/')}"
         if query:
             url = f"{url}?{urlencode(query)}"
         try:
@@ -407,11 +444,11 @@ class SportsDataIOClient:
             self._last_error_message = str(exc)
             return None
 
-    def _resolve_live_player(self, player_reference: str, team: str | None = None) -> dict | None:
+    def _resolve_live_player(self, player_reference: str, team: str | None = None, sport: str | None = None) -> dict | None:
         normalized_query = _normalize(player_reference)
         normalized_team = _normalize(team or "")
         for path in ("scores/json/Players", "scores/json/PlayersBasic"):
-            players = self._request(path)
+            players = self._request(path, sport=sport)
             if not isinstance(players, list):
                 continue
             for entry in players:
@@ -428,8 +465,47 @@ class SportsDataIOClient:
                     "id": str(entry.get("PlayerID") or _slugify(name)),
                     "name": name or _titleize(player_reference),
                     "team": team_name or (_titleize(team) if team else "Open Market"),
+                    "sport_key": sport or "basketball_nba",
                 }
         return None
+
+    def fetch_top_players(self, sport: str, limit: int = 10) -> list[dict]:
+        if not self.api_key:
+            return []
+        players = self._request("scores/json/Players", sport=sport)
+        if not isinstance(players, list):
+            players = self._request("scores/json/PlayersBasic", sport=sport)
+        season_stats = self._request(f"stats/json/PlayerSeasonStats/{self.season}", sport=sport)
+        if not isinstance(players, list) or not isinstance(season_stats, list):
+            return []
+        stats_by_id = {
+            str(entry.get("PlayerID")): entry
+            for entry in season_stats
+            if entry.get("PlayerID") is not None
+        }
+        ranked = []
+        for player in players:
+            player_id = str(player.get("PlayerID") or "")
+            stats = stats_by_id.get(player_id)
+            name = player.get("Name") or " ".join(
+                part for part in [player.get("FirstName"), player.get("LastName")] if part
+            )
+            if not player_id or not name or not stats:
+                continue
+            score = _season_value_score(stats)
+            if score <= 0:
+                continue
+            ranked.append(
+                {
+                    "id": player_id,
+                    "name": name,
+                    "team": player.get("Team") or player.get("TeamName") or player.get("TeamKey") or "Open Market",
+                    "sport_key": sport,
+                    "season_value_score": round(score, 3),
+                }
+            )
+        ranked.sort(key=lambda item: item["season_value_score"], reverse=True)
+        return ranked[:limit]
 
     def _resolve_live_team(self, team_reference: str) -> dict | None:
         normalized_query = _normalize(team_reference)
@@ -450,14 +526,21 @@ class SportsDataIOClient:
                 }
         return None
 
-    def _fetch_live_player_context(self, player: dict) -> dict | None:
+    def _fetch_live_player_context(self, player: dict, sport: str | None = None) -> dict | None:
         player_id = player.get("id")
         if not self.api_key or not player_id:
             return None
 
-        season_stats = self._request(f"stats/json/PlayerSeasonStatsByPlayer/{self.season}/{player_id}")
-        recent_games = self._request(f"stats/json/PlayerGameStatsByPlayerID/{player_id}/5")
-        injuries = self._request("scores/json/Injuries")
+        season_stats = self._request(f"stats/json/PlayerSeasonStatsByPlayer/{self.season}/{player_id}", sport=sport)
+        if not isinstance(season_stats, dict):
+            season_stats_list = self._request(f"stats/json/PlayerSeasonStats/{self.season}", sport=sport)
+            if isinstance(season_stats_list, list):
+                season_stats = next(
+                    (entry for entry in season_stats_list if str(entry.get("PlayerID")) == str(player_id)),
+                    None,
+                )
+        recent_games = self._request(f"stats/json/PlayerGameStatsByPlayerID/{player_id}/5", sport=sport)
+        injuries = self._request("scores/json/Injuries", sport=sport)
 
         if not isinstance(recent_games, list) and not isinstance(season_stats, dict):
             return None

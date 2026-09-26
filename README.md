@@ -46,6 +46,7 @@ The repository still includes the underlying HTTP prediction utilities:
   with team, sport, injury status, explicit injured yes/no fields, sport-aware betting suggestions, sport-specific model weighting, historical form windows, confidence/range outputs, computation/source details, and embedded The Odds API endpoint and sport coverage data
   (`sport=...` can be any supported Odds API sport key such as `basketball_nba` or `americanfootball_nfl`)
 - `GET /players/top?sport={sport_key}&limit=10` summarizes the top predicted players for a selected sport and includes each player's leading suggestion
+  (when `SPORTSDATAIO_API_KEY` is configured, NFL top-player candidates are pulled from the live SportsDataIO player and season-stat feeds before falling back to local samples)
 - `GET /game/{id}/edge` supports game ids or team names
 - `GET /backtest/summary.json` returns measured ROI, hit rate, Brier score, calibration bins, player error metrics, recent outcomes, and learned-model status
 - `POST /predictions/{prediction_id}/outcome` records actual outcomes for stored player/game predictions so backtesting can grade them over time

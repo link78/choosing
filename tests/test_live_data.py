@@ -14,6 +14,43 @@ from choosing.service import PredictionService
 
 
 def fake_sports_fetcher(url: str, headers=None, timeout=5.0):
+    if "/nfl/" in url and "scores/json/Players" in url:
+        return [
+            {"PlayerID": 101, "Name": "Patrick Mahomes", "Team": "Kansas City Chiefs"},
+            {"PlayerID": 102, "Name": "Josh Allen", "Team": "Buffalo Bills"},
+            {"PlayerID": 103, "Name": "Christian McCaffrey", "Team": "San Francisco 49ers"},
+            {"PlayerID": 104, "Name": "Lamar Jackson", "Team": "Baltimore Ravens"},
+            {"PlayerID": 105, "Name": "Tyreek Hill", "Team": "Miami Dolphins"},
+            {"PlayerID": 106, "Name": "CeeDee Lamb", "Team": "Dallas Cowboys"},
+            {"PlayerID": 107, "Name": "Jalen Hurts", "Team": "Philadelphia Eagles"},
+            {"PlayerID": 108, "Name": "Joe Burrow", "Team": "Cincinnati Bengals"},
+            {"PlayerID": 109, "Name": "Justin Jefferson", "Team": "Minnesota Vikings"},
+            {"PlayerID": 110, "Name": "Saquon Barkley", "Team": "Philadelphia Eagles"},
+        ]
+    if "/nfl/" in url and "stats/json/PlayerSeasonStats/2024" in url:
+        return [
+            {"PlayerID": 101, "FantasyPoints": 410},
+            {"PlayerID": 102, "FantasyPoints": 385},
+            {"PlayerID": 103, "FantasyPoints": 360},
+            {"PlayerID": 104, "FantasyPoints": 352},
+            {"PlayerID": 105, "FantasyPoints": 348},
+            {"PlayerID": 106, "FantasyPoints": 344},
+            {"PlayerID": 107, "FantasyPoints": 340},
+            {"PlayerID": 108, "FantasyPoints": 338},
+            {"PlayerID": 109, "FantasyPoints": 332},
+            {"PlayerID": 110, "FantasyPoints": 328},
+        ]
+    if "/nfl/" in url and "PlayerSeasonStatsByPlayer" in url:
+        player_id = url.split("/")[-1].split("?")[0]
+        return {"PlayerID": int(player_id), "FantasyPoints": 300, "Games": 17, "Points": 280, "Minutes": 60}
+    if "/nfl/" in url and "PlayerGameStatsByPlayerID" in url:
+        return [
+            {"Points": 24, "Minutes": 60, "PersonalFouls": 0},
+            {"Points": 22, "Minutes": 60, "PersonalFouls": 0},
+            {"Points": 26, "Minutes": 60, "PersonalFouls": 0},
+        ]
+    if "/nfl/" in url and "scores/json/Injuries" in url:
+        return []
     if "scores/json/Players" in url:
         return [
             {"PlayerID": 30, "Name": "Stephen Curry", "Team": "Golden State Warriors"},
@@ -164,6 +201,22 @@ class LiveDataSourceTests(unittest.TestCase):
         self.assertIsNone(status["media_broadcast"]["last_error_message"])
         self.assertIsNone(status["fantasy_sports_api"]["last_error_message"])
         self.assertIsNone(status["odds_api"]["last_error_message"])
+
+    def test_service_uses_live_nfl_players_for_top_summary(self):
+        with patch.dict(os.environ, {"SPORTSDATAIO_API_KEY": "sports-key"}, clear=False):
+            service = PredictionService(
+                sports_client=SportsDataIOClient(fetcher=fake_sports_fetcher),
+                media_client=MediaBroadcastClient(fetcher=fake_sports_fetcher),
+                fantasy_client=FantasySportsAPIClient(fetcher=fake_sports_fetcher),
+            )
+            summary = service.get_top_players_summary("americanfootball_nfl", limit=10)
+
+        self.assertEqual(summary["sport"]["league"], "NFL")
+        self.assertEqual(len(summary["top_players"]), 10)
+        player_names = [entry["player_name"] for entry in summary["top_players"]]
+        self.assertIn("Patrick Mahomes", player_names)
+        self.assertIn("Saquon Barkley", player_names)
+        self.assertTrue(all("Featured Player" not in name for name in player_names))
 
     def test_source_status_tracks_last_upstream_success_and_error(self):
         def failing_fetcher(url: str, headers=None, timeout=5.0):
