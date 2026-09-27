@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, unquote
 from .elo import TENNIS_SURFACES, normalize_surface
 from .grading import parse_grade_date
 from .metrics import BREAKDOWN_DIMENSIONS, TIMESERIES_WINDOWS
-from .mlb_props import MLBLookupError, MLBPropModel, reference_data as mlb_reference_data
+from .mlb_props import INJURY_STATUSES, MLBLookupError, MLBPropModel, reference_data as mlb_reference_data
 from .service import PredictionService
 from .ui import app_metadata, render_home_page
 
@@ -432,6 +432,14 @@ def app(environ, start_response):
                 overrides["roof_closed"] = _parse_bool(query["roof_closed"][0])
             except ValueError:
                 return json_response(start_response, "400 Bad Request", {"error": "roof_closed must be a boolean"})
+        injury_status = query.get("injury_status", [""])[0].strip()
+        if injury_status:
+            matched = next((status for status in INJURY_STATUSES if status.lower() == injury_status.lower()), None)
+            if matched is None:
+                return json_response(
+                    start_response, "400 Bad Request", {"error": f"injury_status must be one of: {', '.join(INJURY_STATUSES)}"}
+                )
+            overrides["injury_status"] = matched
         try:
             payload = MLBPropModel(service.sports_client, service.odds_client).project(player, pitcher, park, overrides)
         except MLBLookupError:

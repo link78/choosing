@@ -226,15 +226,21 @@ Every layer is returned under `steps` so the math is auditable:
 5. **Weather** – `M_weather = 1 + WindOut_mph·0.01 + (temp_f − 70)·0.005` (neutral for domes or `roof_closed=true`).
 6. **Pitch-type fit** – `M_pitchtype = Σ PitcherUsage_i·PlayerSLG_i / Σ LeagueUsage_i·PlayerSLG_i`, i.e. the player's
    SLG against this pitcher's mix normalized by his SLG against a league-average mix (so power already in the baseline is not double counted);
-   `HR_final = HR_env · M_pitchtype` per plate appearance.
+   `HR_final = HR_env · M_pitchtype · M_injury` per plate appearance.
+6b. **Injury (player profile)** – the batter's player-profile injury status (SportsDataIO MLB `Injuries` when
+   `SPORTSDATAIO_API_KEY` is set, otherwise the same fallback profile shown by the player lookup) sets `P(plays)` and a
+   playing-through-injury power factor `M_injury`: Available 1.0/1.0, Probable 0.95/0.97, Limited or Day-To-Day 0.85/0.9,
+   Questionable 0.5/0.85, Doubtful 0.25/0.8, Out or any IL stint 0/0. Game-level `P(HR)` and total bases are multiplied by
+   `P(plays)`, so an injured player who is Out cannot homer. Returned under `steps.injury`.
 7. **Total bases** – per-PA 1B/2B/3B rates (scaled by xBA/BA, pitcher BA-against, TB park factor, and recent TB form) plus `HR_final`
    form an outcome distribution; `E[TB] = PA·(1·P(1B) + 2·P(2B) + 3·P(3B) + 4·P(HR))`, and `P(TB > line)` is computed exactly by convolving over expected PAs.
 8. **Market comparison** – `P_implied = 1 / decimal odds`, `Edge = P_model − P_implied` (plus a no-vig edge when both sides are priced).
-   Because books price HR props per game, `P_model` for the HR market is `1 − (1 − HR_final)^PA`, not the per-PA rate.
+   Because books price HR props per game, `P_model` for the HR market is `P(plays) · (1 − (1 − HR_final)^PA)`, not the per-PA rate.
 
 Optional query overrides: `wind_out_mph`, `temperature_f`, `humidity`, `roof_closed`, `park_hr_factor`, `park_tb_factor`,
 `pitcher_hr9`, `league_hr9`, `season_hr`, `season_pa`, `l10_hr`, `l10_pa`, `l10_tb`, `lineup_slot` (1–9) or `expected_pa`,
-`hr_odds` / `hr_no_odds`, and `tb_line` / `tb_over_odds` / `tb_under_odds` (American odds).
+`hr_odds` / `hr_no_odds`, `tb_line` / `tb_over_odds` / `tb_under_odds` (American odds), and `injury_status`
+(`Available`, `Probable`, `Limited`, `Questionable`, `Doubtful`, or `Out`).
 With `SPORTSDATAIO_API_KEY` set, season and last-10 totals come from SportsDataIO MLB `PlayerSeasonStats` and
 `PlayerGameStatsBySeason`; with `ODDS_API_KEY` set, live prop prices are pulled from the event odds endpoint.
 Otherwise an illustrative reference sample and a deterministic fallback market are used (`sources` reports which).
@@ -249,4 +255,5 @@ abbreviation such as `NYY`; omit for all teams), `limit` (1–25 per team, defau
 team's home park), `min_pa` (default 100), `wind_out_mph`, `temperature_f`, `humidity`, `roof_closed`, `pitcher_hr9`,
 `league_hr9`, and `expected_pa`. With `SPORTSDATAIO_API_KEY` set, candidates come from a single SportsDataIO
 `PlayerSeasonStats` call (recent form defaults to the baseline to avoid per-player requests); live Odds API HR prices are
-only fetched when a single `team` is requested, to conserve quota.
+only fetched when a single `team` is requested, to conserve quota. Each ranked player carries `injury_status`,
+`injured`, and `play_probability`; batters ruled Out are removed from the ranking and listed under each team's `unavailable`.

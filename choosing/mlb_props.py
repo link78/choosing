@@ -39,6 +39,17 @@ LINEUP_SLOT_PA = [4.65, 4.55, 4.45, 4.35, 4.25, 4.15, 4.05, 3.95, 3.85]
 DEFAULT_WEATHER = {"wind_out_mph": 0.0, "temperature_f": 70.0, "humidity": 50.0}
 WEATHER_BASE_TEMPERATURE_F = 70.0
 
+# Injury layer: chance the batter plays and the power retained when playing through the injury.
+INJURY_IMPACT = {
+    "Out": {"play_probability": 0.0, "power_factor": 0.0},
+    "Doubtful": {"play_probability": 0.25, "power_factor": 0.8},
+    "Questionable": {"play_probability": 0.5, "power_factor": 0.85},
+    "Limited": {"play_probability": 0.85, "power_factor": 0.9},
+    "Probable": {"play_probability": 0.95, "power_factor": 0.97},
+    "Available": {"play_probability": 1.0, "power_factor": 1.0},
+}
+INJURY_STATUSES = tuple(INJURY_IMPACT)
+
 MLB_TEAMS = {
     "ARI": "Arizona Diamondbacks", "ATL": "Atlanta Braves", "BAL": "Baltimore Orioles", "BOS": "Boston Red Sox",
     "CHC": "Chicago Cubs", "CHW": "Chicago White Sox", "CIN": "Cincinnati Reds", "CLE": "Cleveland Guardians",
@@ -283,6 +294,22 @@ def _find(entries: list[dict], reference: str | None, allow_team: bool = True) -
     return None
 
 
+def normalize_injury_status(status: str | None) -> str:
+    """Map a SportsDataIO / player-profile injury status (e.g. `10-Day IL`, `Day-To-Day`) onto an INJURY_IMPACT key."""
+    text = _normalize(status or "")
+    words = set(text.split())
+    if not words:
+        return "Available"
+    if words & {"out", "il", "dl", "disabled", "suspended", "inactive", "restricted"} or "injured list" in text:
+        return "Out"
+    for key in ("doubtful", "questionable", "limited", "probable"):
+        if key in words:
+            return key.capitalize()
+    if "dtd" in words or "day to day" in text or "game time" in text:
+        return "Limited"
+    return "Available"
+
+
 def team_full_name(reference: str | None) -> str:
     """Map an MLB abbreviation (e.g. `NYY`) or full/partial team name to the full team name; '' when unknown."""
     raw = (reference or "").strip()
@@ -402,6 +429,7 @@ class MLBPropModel:
     def __init__(self, sports_client: SportsDataIOClient | None = None, odds_client: OddsAPIClient | None = None) -> None:
         self.sports_client = sports_client or SportsDataIOClient()
         self.odds_client = odds_client or OddsAPIClient()
+        self._injury_cache: tuple[dict | None, str] | None = None
 
     # ----- data resolution -------------------------------------------------
     @staticmethod
@@ -439,6 +467,7 @@ class MLBPropModel:
         if live and live["season"]["pa"] > 0:
             mode = "live"
             batter["name"] = live["name"]
+            batter["player_id"] = live.get("player_id") or ""
             batter["team"] = batter["team"] or team_full_name(live["team"])
             batter["season"] = live["season"]
             if live.get("recent") and live["recent"]["pa"] > 0:
@@ -471,6 +500,44 @@ class MLBPropModel:
             raise MLBLookupError("park not found")
         return dict(park)
 
+    def _injury_report(self) -> tuple[dict | None, str]:
+        """One SportsDataIO MLB injuries lookup per model instance; (None, 'fallback') without a key or on failure."""
+        if self._injury_cache is None:
+            report = self.sports_client.fetch_mlb_injuries() if self.sports_client.api_key else None
+            self._injury_cache = (report, "live") if report is not None else (None, "fallback")
+        return self._injury_cache
+
+    def _injury_context(self, batter: dict, overrides: dict) -> dict:
+        """Injury status for the batter: override, live SportsDataIO injury list, or the fallback player profile."""
+        risk = None
+        if overrides.get("injury_status"):
+            raw_status, source = str(overrides["injury_status"]), "override"
+        else:
+            report, mode = self._injury_report()
+            if report is not None:
+                raw_status = report.get(f"id:{batter.get('player_id')}") if batter.get("player_id") else None
+                raw_status = raw_status or report.get(f"name:{_normalize(batter['name'])}") or "Available"
+                source = "live"
+            elif self.sports_client.api_key:
+                raw_status, source = "Available", "unavailable"
+            else:
+                profile = self.sports_client.fetch_player_context(batter["name"], {"sport": SPORT_KEY, "team": batter["team"]})
+                raw_status, risk, source = profile.get("injury_status") or "Available", profile.get("injury_risk"), mode
+        status = normalize_injury_status(raw_status)
+        impact = INJURY_IMPACT[status]
+        injured = status in {"Limited", "Doubtful", "Questionable", "Out"} or (risk is not None and risk >= 0.35)
+        return {
+            "formula": "P(HR game) = P(plays) * [1 - (1 - HR_final * M_injury)^PA]",
+            "status": status,
+            "reported_status": raw_status,
+            "injury_risk": round(risk, 3) if risk is not None else None,
+            "injured": injured,
+            "injured_label": "Yes" if injured else "No",
+            "play_probability": impact["play_probability"],
+            "m_injury": impact["power_factor"],
+            "source": source,
+        }
+
     def _live_market(self, batter: dict, market: str) -> dict | None:
         if not self.odds_client.api_key or not batter["team"]:
             return None
@@ -494,6 +561,8 @@ class MLBPropModel:
         overrides: dict,
         live_markets: bool = True,
     ) -> dict:
+        injury = self._injury_context(batter, overrides)
+        play_probability = injury["play_probability"]
 
         season = batter["season"]
         for key, field in (("season_hr", "hr"), ("season_pa", "pa")):
@@ -621,7 +690,7 @@ class MLBPropModel:
         )
         relative_league = player_weighted / league_weighted if league_weighted else 1.0
         m_pitchtype = clamp(player_weighted / player_vs_league_mix, 0.7, 1.4) if profile else 1.0
-        hr_final = clamp(hr_env * m_pitchtype, 0.001, 0.25)
+        hr_final = clamp(hr_env * m_pitchtype * injury["m_injury"], 0.001, 0.25)
         pitch_step = {
             "formula": "M_pitchtype = sum(PitcherUsage_i * PlayerSLGvsPitch_i) / sum(LeagueUsage_i * PlayerSLGvsPitch_i)",
             "weighted_player_slg": round(player_weighted, 3),
@@ -629,6 +698,7 @@ class MLBPropModel:
             "player_slg_vs_league_mix": round(player_vs_league_mix, 3),
             "vs_league_ratio": round(relative_league, 3),
             "m_pitchtype": round(m_pitchtype, 3),
+            "m_injury": injury["m_injury"],
             "hr_final": round(hr_final, 4),
             "breakdown": sorted(breakdown, key=lambda item: -item["usage"]),
         }
@@ -649,9 +719,12 @@ class MLBPropModel:
         p0 = 1 - (p1 + p2 + p3 + hr_final)
         per_pa = {0: p0, 1: p1, 2: p2, 3: p3, 4: hr_final}
         tb_per_pa = p1 + 2 * p2 + 3 * p3 + 4 * hr_final
-        expected_tb = tb_per_pa * expected_pa
+        expected_tb = tb_per_pa * expected_pa * play_probability
         distribution = total_bases_distribution(per_pa, expected_pa)
-        hr_game_probability = at_least_one_probability(hr_final, expected_pa)
+        if play_probability < 1.0:
+            distribution = {total: prob * play_probability for total, prob in distribution.items()}
+            distribution[0] = distribution.get(0, 0.0) + (1 - play_probability)
+        hr_game_probability = at_least_one_probability(hr_final, expected_pa) * play_probability
 
         tb_line = overrides.get("tb_line")
         tb_market_live = None if tb_line is not None or "tb_over_odds" in overrides else (self._live_market(batter, TB_MARKET) if live_markets else None)
@@ -698,13 +771,15 @@ class MLBPropModel:
 
         return {
             "sport": SPORT_KEY,
-            "player": {"name": batter["name"], "team": batter["team"], "bats": batter["bats"]},
+            "player": {"name": batter["name"], "team": batter["team"], "bats": batter["bats"],
+                       "injury_status": injury["status"], "injured": injury["injured"], "injured_label": injury["injured_label"]},
             "pitcher": {"name": opponent["name"], "team": opponent["team"], "throws": opponent["throws"]},
             "park": venue,
             "home_run": {
                 "per_pa_probability": round(hr_final, 4),
                 "expected_pa": round(expected_pa, 2),
                 "game_probability": round(hr_game_probability, 4),
+                "play_probability": play_probability,
                 "fair_american_odds": probability_to_american(hr_game_probability),
                 "market": hr_comparison,
             },
@@ -723,16 +798,18 @@ class MLBPropModel:
                 "ballpark": park_step,
                 "weather": weather_step,
                 "pitch_type": pitch_step,
+                "injury": injury,
                 "total_bases": tb_step,
             },
             "sources": {
-                "sportsdataio": {"batter": batter_mode, "pitcher": pitcher_mode},
+                "sportsdataio": {"batter": batter_mode, "pitcher": pitcher_mode, "injury": injury["source"]},
                 "odds_api": {"home_run": hr_mode, "total_bases": tb_mode},
                 "statcast": "reference",
             },
             "notes": [
                 "Market probability is compared against the per-game probability P(HR >= 1) = 1 - (1 - HR_final)^PA, "
                 "since sportsbook HR props are priced per game, not per plate appearance.",
+                "Injury status from the player profile scales the chance the batter plays and his power; an Out player cannot homer.",
             ],
             "disclaimer": DISCLAIMER,
         }
@@ -751,6 +828,7 @@ class MLBPropModel:
                         continue
                     batter = self._batter_from_local(local_by_name.get(_normalize(row["name"])), row["name"])
                     batter["name"] = row["name"]
+                    batter["player_id"] = row.get("player_id") or ""
                     batter["team"] = team
                     batter["season"] = dict(row["season"])
                     candidates.append(self._finalize_batter(batter))
@@ -792,12 +870,18 @@ class MLBPropModel:
         for team_name in sorted(by_team):
             venue = fixed_venue or self._resolve_park(None, team_name)
             rows = []
+            unavailable = []
             for batter in by_team[team_name]:
                 result = self._score(
                     batter, batter_mode, opponent, pitcher_mode, venue, overrides, live_markets=team_filter is not None
                 )
                 hr = result["home_run"]
                 steps = result["steps"]
+                injury = steps["injury"]
+                if injury["play_probability"] <= 0:
+                    unavailable.append({"name": batter["name"], "injury_status": injury["status"],
+                                        "reported_status": injury["reported_status"]})
+                    continue
                 rows.append(
                     {
                         "name": batter["name"],
@@ -806,6 +890,10 @@ class MLBPropModel:
                         "season_pa": batter["season"]["pa"],
                         "hr_baseline": steps["baseline_power"]["hr_baseline"],
                         "recent_trend": steps["recent_form"]["trend"],
+                        "injury_status": injury["status"],
+                        "injured": injury["injured"],
+                        "injured_label": injury["injured_label"],
+                        "play_probability": injury["play_probability"],
                         "per_pa_probability": hr["per_pa_probability"],
                         "game_probability": hr["game_probability"],
                         "fair_american_odds": hr["fair_american_odds"],
@@ -824,6 +912,7 @@ class MLBPropModel:
                     "team": team_name,
                     "park": {"name": venue["name"], "hr_factor": venue["hr_factor"]},
                     "players": rows[:limit],
+                    "unavailable": sorted(unavailable, key=lambda row: row["name"]),
                 }
             )
 
@@ -835,12 +924,13 @@ class MLBPropModel:
             "park": fixed_venue["name"] if fixed_venue else "home park",
             "teams": teams,
             "sources": {
-                "sportsdataio": {"batters": batter_mode, "pitcher": pitcher_mode},
+                "sportsdataio": {"batters": batter_mode, "pitcher": pitcher_mode, "injuries": self._injury_report()[1]},
                 "odds_api": "live when a single team is requested and ODDS_API_KEY is set, otherwise fallback",
             },
             "notes": [
                 "Players are ranked by the model's per-game probability of at least one home run.",
                 "The same opposing pitcher, park, and weather inputs are applied to every listed batter.",
+                "Player-profile injury status lowers P(HR); batters ruled Out are listed under `unavailable` instead of ranked.",
             ],
             "disclaimer": DISCLAIMER,
         }

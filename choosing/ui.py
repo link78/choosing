@@ -442,7 +442,7 @@ def render_home_page() -> str:
 
       <article class="card">
         <h2>Likely home run hitters by team</h2>
-        <p class="muted">Each team's batters ranked by the MLB prop model's chance of at least one home run this game. Informational only, not betting advice.</p>
+        <p class="muted">Each team's batters ranked by the MLB prop model's chance of at least one home run this game, adjusted for player-profile injury status (injured players who are Out cannot homer). Informational only, not betting advice.</p>
         <form id="mlb-hr-leaders-form">
           <label>Team
             <select id="mlb-hr-team" name="mlb-hr-team">
@@ -920,9 +920,11 @@ EXTRA_SCRIPT = r"""
               ${team.players.map((player) => `
                 <li><strong>${esc(player.name)}</strong> — P(HR) ${pct(player.game_probability)} (fair ${esc(player.fair_american_odds)})
                   · ${esc(player.season_hr)} HR / ${esc(player.season_pa)} PA · ${esc(player.recent_trend)}
+                  · ${player.injured ? `<span class="danger">${esc(player.injury_status)} (injured)</span>` : esc(player.injury_status)}
                   ${player.edge !== null ? `· <span class="${player.edge > 0 ? "success" : "danger"}">edge ${pct(player.edge)}</span> vs ${esc(player.market_odds)} (${esc(player.market_source)})` : ""}
                 </li>`).join("")}
             </ol>
+            ${(team.unavailable || []).length ? `<p class="muted">Out (injured, excluded): ${team.unavailable.map((player) => `${esc(player.name)} (${esc(player.reported_status)})`).join(", ")}</p>` : ""}
           </div>`).join("");
         target.innerHTML = `
           <div class="banner muted">vs ${esc(payload.pitcher.name)} · ${esc(payload.park)} · ${esc(payload.sources.sportsdataio.batters)} batter data</div>
@@ -977,6 +979,7 @@ EXTRA_SCRIPT = r"""
               <div class="metric"><strong>4. Park</strong><br>x${esc(steps.ballpark.m_park)}</div>
               <div class="metric"><strong>5. Weather</strong><br>x${esc(steps.weather.m_weather)}${steps.weather.roof_closed ? " (roof closed)" : ""}</div>
               <div class="metric"><strong>6. Pitch-type fit</strong><br>x${esc(steps.pitch_type.m_pitchtype)} → HR/PA ${pct(steps.pitch_type.hr_final)}</div>
+              <div class="metric"><strong>7. Injury (player profile)</strong><br>${esc(steps.injury.status)} · Injured ${esc(steps.injury.injured_label)} · plays ${pct(steps.injury.play_probability)} · power x${esc(steps.injury.m_injury)} (${esc(steps.injury.source)})</div>
             </div>
           </div>
           <p class="muted">${esc(payload.disclaimer)}</p>`;
