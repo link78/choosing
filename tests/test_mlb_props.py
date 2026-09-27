@@ -178,6 +178,17 @@ class MLBHomeRunLeadersTests(unittest.TestCase):
         dodgers = next(team for team in result["teams"] if team["team"] == "Los Angeles Dodgers")
         self.assertEqual(dodgers["park"]["name"], "Dodger Stadium")
 
+    def test_fallback_covers_every_mlb_team(self):
+        from choosing.mlb_props import MLB_TEAMS, reference_data
+        result = self.model.team_home_run_leaders(limit=1)
+        teams = {team["team"]: team for team in result["teams"]}
+        self.assertEqual(set(teams), set(MLB_TEAMS.values()))
+        self.assertEqual(len(teams), 30)
+        for team in teams.values():
+            self.assertEqual(len(team["players"]), 1)
+            self.assertNotEqual(team["park"]["name"], "Neutral Park")
+        self.assertEqual(reference_data()["teams"], sorted(MLB_TEAMS.values()))
+
     def test_single_team_matches_individual_projection(self):
         result = self.model.team_home_run_leaders("NYY", 5, "Gerrit Cole", "Coors Field", {"wind_out_mph": 8})
         self.assertEqual(result["team"], "New York Yankees")

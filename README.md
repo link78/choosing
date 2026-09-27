@@ -243,7 +243,8 @@ This is information only, not betting advice.
 ### Likely home run hitters by team
 
 `GET /mlb/hr-leaders` (and the **Likely home run hitters by team** dashboard card) runs every batter through the same
-layered model and ranks each team's hitters by per-game `P(HR ≥ 1)`. Optional parameters: `team` (full name, nickname, or
+layered model and ranks each team's hitters by per-game `P(HR ≥ 1)`. All 30 MLB teams are listed (the reference sample includes
+at least one batter and a home park for every club). Optional parameters: `team` (full name, nickname, or
 abbreviation such as `NYY`; omit for all teams), `limit` (1–25 per team, default 5), `pitcher`, `park` (defaults to each
 team's home park), `min_pa` (default 100), `wind_out_mph`, `temperature_f`, `humidity`, `roof_closed`, `pitcher_hr9`,
 `league_hr9`, and `expected_pa`. With `SPORTSDATAIO_API_KEY` set, candidates come from a single SportsDataIO
