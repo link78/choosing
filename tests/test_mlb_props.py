@@ -8,6 +8,7 @@ from choosing.mlb_props import (
     american_to_decimal,
     at_least_one_probability,
     market_comparison,
+    normalize_injury_status,
     probability_over,
     team_full_name,
     total_bases_distribution,
@@ -153,6 +154,64 @@ class MLBLiveOddsTests(unittest.TestCase):
         self.assertIsNotNone(tb_market["no_vig_edge"])
 
 
+class MLBInjuryTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict(os.environ, {"SPORTSDATAIO_API_KEY": "", "ODDS_API_KEY": ""})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.model = MLBPropModel()
+
+    def test_normalize_injury_status(self):
+        self.assertEqual(normalize_injury_status("Available"), "Available")
+        self.assertEqual(normalize_injury_status("10-Day IL"), "Out")
+        self.assertEqual(normalize_injury_status("60-Day Injured List"), "Out")
+        self.assertEqual(normalize_injury_status("Day-To-Day"), "Limited")
+        self.assertEqual(normalize_injury_status("questionable"), "Questionable")
+        self.assertEqual(normalize_injury_status(None), "Available")
+
+    def test_injury_status_scales_home_run_probability(self):
+        healthy = self.model.project("Aaron Judge", overrides={"injury_status": "Available"})
+        questionable = self.model.project("Aaron Judge", overrides={"injury_status": "Questionable"})
+        out = self.model.project("Aaron Judge", overrides={"injury_status": "Out"})
+        self.assertEqual(healthy["steps"]["injury"]["play_probability"], 1.0)
+        self.assertLess(questionable["home_run"]["game_probability"], healthy["home_run"]["game_probability"] * 0.5)
+        self.assertEqual(out["home_run"]["game_probability"], 0.0)
+        self.assertEqual(out["total_bases"]["expected"], 0.0)
+        self.assertEqual(out["total_bases"]["probability_over"], 0.0)
+        self.assertTrue(out["player"]["injured"])
+        self.assertEqual(out["sources"]["sportsdataio"]["injury"], "override")
+
+    def test_fallback_uses_player_profile_injury_status(self):
+        profile = self.model.sports_client.fetch_player_context("Mookie Betts", {"sport": "baseball_mlb", "team": "Los Angeles Dodgers"})
+        result = self.model.project("Mookie Betts")
+        injury = result["steps"]["injury"]
+        self.assertEqual(injury["reported_status"], profile["injury_status"])
+        self.assertEqual(injury["status"], normalize_injury_status(profile["injury_status"]))
+        self.assertEqual(injury["source"], "fallback")
+
+    def test_live_injury_list_removes_out_players_from_leaders(self):
+        season = [
+            {"PlayerID": 1, "Name": "Aaron Judge", "Team": "NYY", "Games": 100, "PlateAppearances": 400, "AtBats": 340,
+             "Hits": 100, "Doubles": 20, "Triples": 0, "HomeRuns": 30},
+            {"PlayerID": 2, "Name": "Juan Soto", "Team": "NYY", "Games": 100, "PlateAppearances": 400, "AtBats": 340,
+             "Hits": 100, "Doubles": 20, "Triples": 0, "HomeRuns": 20},
+        ]
+        injuries = [{"PlayerID": 1, "Name": "Aaron Judge", "Team": "NYY", "Status": "10-Day IL"}]
+
+        def fetcher(url, headers=None, timeout=5.0):
+            return injuries if "Injuries" in url else season
+
+        with patch.dict(os.environ, {"SPORTSDATAIO_API_KEY": "test"}):
+            model = MLBPropModel()
+            model.sports_client.fetcher = fetcher
+            result = model.team_home_run_leaders("NYY")
+        team = result["teams"][0]
+        self.assertEqual([player["name"] for player in team["players"]], ["Juan Soto"])
+        self.assertEqual(team["players"][0]["injury_status"], "Available")
+        self.assertEqual(team["unavailable"], [{"name": "Aaron Judge", "injury_status": "Out", "reported_status": "10-Day IL"}])
+        self.assertEqual(result["sources"]["sportsdataio"]["injuries"], "live")
+
+
 class MLBHomeRunLeadersTests(unittest.TestCase):
     def setUp(self):
         patcher = patch.dict(os.environ, {"SPORTSDATAIO_API_KEY": "", "ODDS_API_KEY": ""})
@@ -177,6 +236,17 @@ class MLBHomeRunLeadersTests(unittest.TestCase):
             self.assertEqual([player["rank"] for player in team["players"]], list(range(1, len(probabilities) + 1)))
         dodgers = next(team for team in result["teams"] if team["team"] == "Los Angeles Dodgers")
         self.assertEqual(dodgers["park"]["name"], "Dodger Stadium")
+
+    def test_fallback_covers_every_mlb_team(self):
+        from choosing.mlb_props import MLB_TEAMS, reference_data
+        result = self.model.team_home_run_leaders(limit=1)
+        teams = {team["team"]: team for team in result["teams"]}
+        self.assertEqual(set(teams), set(MLB_TEAMS.values()))
+        self.assertEqual(len(teams), 30)
+        for team in teams.values():
+            self.assertEqual(len(team["players"]), 1)
+            self.assertNotEqual(team["park"]["name"], "Neutral Park")
+        self.assertEqual(reference_data()["teams"], sorted(MLB_TEAMS.values()))
 
     def test_single_team_matches_individual_projection(self):
         result = self.model.team_home_run_leaders("NYY", 5, "Gerrit Cole", "Coors Field", {"wind_out_mph": 8})
@@ -219,6 +289,10 @@ class MLBApiTests(unittest.TestCase):
         self.assertEqual(request("/mlb/hr-leaders?limit=0")["status"], "400 Bad Request")
         self.assertEqual(request("/mlb/hr-leaders?temperature_f=hot")["status"], "400 Bad Request")
         self.assertEqual(request("/mlb/hr-leaders?team=Nowhere")["status"], "404 Not Found")
+        self.assertEqual(request("/mlb/props?player=Aaron%20Judge&injury_status=hurt")["status"], "400 Bad Request")
+        out = request("/mlb/props?player=Aaron%20Judge&injury_status=out")
+        self.assertEqual(out["status"], "200 OK")
+        self.assertEqual(out["body"]["home_run"]["game_probability"], 0.0)
         self.assertIn("mlb-hr-leaders-form", request("/")["raw_body"])
 
     def test_props_endpoint_returns_projection(self):

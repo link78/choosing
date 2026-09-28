@@ -825,6 +825,25 @@ class SportsDataIOClient:
             )
         return batters
 
+    def fetch_mlb_injuries(self) -> dict | None:
+        """MLB injury statuses from a single (cached) SportsDataIO `Injuries` call, keyed by PlayerID and normalized name."""
+        injuries = self._request("scores/json/Injuries", sport="baseball_mlb")
+        if not isinstance(injuries, list):
+            return None
+        by_key: dict[str, str] = {}
+        for row in injuries:
+            if not isinstance(row, dict):
+                continue
+            status = row.get("Status") or row.get("InjuryStatus")
+            if not status:
+                continue
+            name = row.get("Name") or " ".join(part for part in [row.get("FirstName"), row.get("LastName")] if part)
+            if row.get("PlayerID") is not None:
+                by_key[f"id:{row['PlayerID']}"] = str(status)
+            if name:
+                by_key[f"name:{_normalize(name)}"] = str(status)
+        return by_key
+
     def fetch_mlb_player_stats(self, player_name: str, recent_games: int = 10) -> dict | None:
         """Season batting/pitching totals plus the last N game logs for an MLB player from SportsDataIO."""
         season_stats = self._request(f"stats/json/PlayerSeasonStats/{self.season}", sport="baseball_mlb")
